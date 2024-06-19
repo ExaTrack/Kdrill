@@ -2,7 +2,7 @@
 
 Kdrill is a tool to analyze the kernel land of Windows 64b systems (tested from Windows 7 to Windows 11). Its main objective is to assess if the kernel is compromised by a rootkit.
 
-The code is compatible for python2/3 without dependencies and can perfom checks without Microsoft symbols or Internet connectivity.
+The code is compatible with python2/3 without dependencies and can perfom checks without Microsoft symbols or Internet connectivity.
 
 For live memory/kernel analysis, the `Winpmem` driver is used and `Kdrill` interfaces itself with the driver. KDrill can also analyze Full crash dumps and Kernel crash dumps (mainly stored in `C:\Windows\MEMORY.DMP`) and a fucked version of AFF4 dumps (zip, but not zipped).
 
