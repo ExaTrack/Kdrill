@@ -2,6 +2,7 @@ import struct
 
 instr_name = {}
 
+
 instr_name['jcc_short'] = [[0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79, 0x7a, 0x7b, 0x7c, 0x7d, 0x7e, 0x7f]]
 instr_name['jcc_long'] = [[0x0f], [0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8a, 0x8b, 0x8c, 0x8d, 0x8e, 0x8f]]
 instr_name['ret'] = [[0xc2, 0xc3]]
@@ -129,7 +130,6 @@ class LDE():
         return size
 
     def f5_(self, datas):
-        """ Do something with 64b"""
         size = 1
         return size
 
@@ -377,12 +377,11 @@ class LDE():
     def g3_Eb(self, datas):
         opcode = datas[1]
         reg_mask = (opcode & 0b00111000) >> 3
-        size = self.mod_rm(datas)
-        size += 1
+        size = self.mod_rm(datas[1:])
         if reg_mask == 0:
             size += 3
             return size
-        if reg_mask == 1:
+        elif reg_mask == 1:
             return size
         size += 2
         return size
@@ -517,7 +516,7 @@ class LDE():
         return 0
 
     def decode_instr(self, datas_to_decode, extended_decode=False):
-        if len(datas_to_decode) <= 0:
+        if not datas_to_decode or len(datas_to_decode) <= 0:
             return [None, None]
         opcode = datas_to_decode[0]
         func = self.base_opcodes[opcode]
@@ -549,7 +548,7 @@ class LDE():
         instr_list = {}
         instr_count = 0
 
-        while len(to_disas) > 0:
+        while to_disas:
             if max_instr <= instr_count:
                 break
             caddress = to_disas.pop()
