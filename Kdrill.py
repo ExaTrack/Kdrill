@@ -11,12 +11,14 @@ import re
 import sys
 import zipfile
 import ctypes
+import socket
 
 
 ctypes.windll.kernel32.Wow64DisableWow64FsRedirection(ctypes.byref(ctypes.c_long()))
 
 bitness = 64
 force_cr3 = False
+is_gdb = False
 is_live = False
 cr3_self_offset = None
 va_address_from = 0
@@ -247,6 +249,7 @@ if (len(sys.argv) < 2):
 
     print("Usage : %s -l/file.dmp" % sys.argv[0])
     print("        -l : load Winpmem for live analysis")
+    print("        -gdb [IP PORT] : connect to remote GDB server")
     sys.exit()
 
 
@@ -746,6 +749,304 @@ def load_driver():
     return True
 
 
+def gdb_send(command):
+    gdb_socket.send(b'$%s#%02x' % (command, sum(bytearray(command)) & 0xff))
+    rcv = gdb_socket.recv(5000)
+    gdb_socket.send(b'+')
+    if rcv is None or not rcv.startswith(b'+'):
+        return None
+    if len(rcv) > 1 and b'#' in rcv[1:]:
+        reply, chksum = rcv[1:].rsplit(b'#', 1)
+    elif rcv == b'+':
+        return rcv
+    return reply
+
+
+def gdb_read_feature(command, fname):
+    offset = 0
+    all_datas = []
+    cdatas = gdb_send(b'%s:read:%s:0,1fa' % (command, fname))
+    while cdatas is not None and len(cdatas) > 0:
+        if cdatas is None:
+            return None
+        if cdatas.startswith(b'$m'):  # continue
+            all_datas.append(cdatas[2:])
+            if len(cdatas) == 508:
+                offset += 0x1fa
+                cdatas = gdb_send(b'%s:read:%s:%x,1fa' % (command, fname, offset))
+        elif cdatas.startswith(b'$l'):  # end
+            all_datas.append(cdatas[2:])
+            break
+        else:
+            return None
+    return b''.join(all_datas)
+
+
+def gdb_read_register(register):
+    registers = {b'rax': 0, b'rbx': 1, b'rcx': 2, b'rdx': 3, b'rsi': 4, b'rdi': 5, b'rbp': 6, b'rsp': 7, b'r8': 8, b'r9': 9, b'r10': 10, b'r11': 11, b'r12': 12, b'r13': 13, b'r14': 14, b'r15': 15, b'rip': 16, b'eflags': 17}
+    register = register.lower()
+    if register in registers:
+        rcv = gdb_send(b'p%x' % (registers[register]))
+        if rcv is not None and rcv.startswith(b'$'):
+            return int(rcv[1:][::-1], 16)
+    return None
+
+
+def gdb_read_memory(vaddress, size):
+    max_chunk_size = 0x1f0
+    offset = 0
+
+    all_datas = []
+
+    while offset < size:
+        if (size - offset) < max_chunk_size:
+            cdata = gdb_send(b'm%s,%x' % (b'%08x' % (vaddress+offset), (size - offset)))
+            offset += (size - offset)
+        else:
+            cdata = gdb_send(b'm%s,%x' % (b'%08x' % (vaddress+offset), max_chunk_size))
+            offset += max_chunk_size
+        if cdata == b'$E00':
+            return None
+        if cdata is not None and len(cdata) > 1 and cdata.startswith(b'$'):
+            all_datas.append(bytes(bytearray().fromhex(cdata[1:].decode('utf8'))))
+    return b''.join(all_datas)
+
+
+def gdb_list_pages_from_PTE(va_address_from, va_address_to, va_address):
+    global debug
+    pxe_indx = (va_address >> 39) & 0x1ff
+    ppe_indx = (va_address >> 30) & 0x1ff
+    pde_indx = (va_address >> 21) & 0x1ff
+
+    current_page = get_va_memory(0xffff000000000000 | (cr3_self_offset << 39) | (pxe_indx << 30) | (ppe_indx << 21) | (pde_indx << 12), 0x1000)
+
+    if current_page is not None and len(current_page) == 0x1000:
+        for i in range(0x1000 >> 3):
+            page_table_i = struct.unpack('Q', current_page[i << 3:(i << 3)+8])[0]
+            ptr_page_table_i = (page_table_i & 0x0000FFFFFFFFF000)
+            cva_address = ((va_address | (i << 12)) & 0xfffffffff000)
+
+            if cva_address >= (va_address_from & 0xfffffffff000) and cva_address < (va_address_to & 0xfffffffff000):
+                if (page_table_i & 0x801):
+                    if debug > 1:
+                        print("      PTE [0x%x] : 0x%016X (0x%016X)" % (i, page_table_i, (va_address | (i << 12))))
+                    right = get_rights_from_page_table(page_table_i)
+                    cdesc = {}
+                    cdesc["right"] = right
+                    cdesc["phys"] = ptr_page_table_i
+                    yield [(va_address | (i << 12)), cdesc]
+                elif ((page_table_i & 0x400) == 0x400):
+                    va_of_pte = 0xffff000000000000 | (page_table_i >> 0x10)
+                    real_entry = get_qword_from_va(va_of_pte)
+                    if real_entry is not None:
+                        if debug > 1:
+                            print("      PTE Prototype : 0x%016X" % (real_entry))
+                        right = get_rights_from_page_table(real_entry)
+                        cdesc = {}
+                        cdesc["right"] = right
+                        cdesc["phys"] = ptr_page_table_i
+                        cdesc["prot_pte"] = True
+                        yield [(va_address | (i << 12)), cdesc]
+
+
+def gdb_list_pages_from_PDE(va_address_from, va_address_to, va_address):
+    global debug
+    pxe_indx = (va_address >> 39) & 0x1ff
+    ppe_indx = (va_address >> 30) & 0x1ff
+
+    current_page = get_va_memory(0xffff000000000000 | (cr3_self_offset << 39) | (cr3_self_offset << 30) | (pxe_indx << 21) | (ppe_indx << 12), 0x1000)
+
+    if current_page is not None and len(current_page) == 0x1000:
+        for i in range(0x1000 >> 3):
+            page_table_i = struct.unpack('Q', current_page[i << 3:(i << 3)+8])[0]
+            ptr_page_table_i = (page_table_i & 0x0000FFFFFFFFF000)
+            if ((((va_address | (i << 21)) & 0xffffffe00000) >= (va_address_from & 0xffffffe00000)) and ((va_address_to & 0xffffffe00000) >= (((va_address) | (i << 21)) & 0xffffffe00000))):
+                if ((page_table_i & 1) == 1):
+                    if ((page_table_i & 0x80) == 0x80):
+                        if debug > 1:
+                            print("    PDE [0x%x] : 0x%016X (0x%016X) - G" % (i, page_table_i, (va_address | (i << 21))))
+                        right = get_rights_from_page_table(page_table_i)
+                        for y in range(0x1000 >> 3):
+                            current_g_address = (va_address | (i << 21) | (y << 12)) & 0xfffffffff000
+                            if ((current_g_address >= (va_address_from & 0xfffffffff000)) and ((va_address_to & 0xfffffffff000) > (current_g_address))):
+                                cdesc = {}
+                                cdesc["right"] = right
+                                cdesc["phys"] = ptr_page_table_i+(y << 12)
+                                cdesc["big_page"] = True
+                                yield [(va_address | (i << 21))+(y << 12), cdesc]
+                    else:
+                        if debug > 1:
+                            print("    PDE [0x%x] : 0x%016X (0x%016X)" % (i, page_table_i, (va_address | (i << 21))))
+                        for clist in gdb_list_pages_from_PTE(va_address_from, va_address_to, (va_address | (i << 21))):
+                            if clist is not None:
+                                yield clist
+
+
+def gdb_list_pages_from_PPE(va_address_from, va_address_to, va_address):
+    pxe_indx = (va_address >> 39) & 0x1ff
+
+    current_page = get_va_memory(0xffff000000000000 | (cr3_self_offset << 39) | (cr3_self_offset << 30) | (cr3_self_offset << 21) | (pxe_indx << 12), 0x1000)
+
+    for i in range(0x1000 >> 3):
+        page_table_i = struct.unpack('Q', current_page[i << 3:(i << 3)+8])[0]
+        if ((((va_address | (i << 30)) & 0xffffc0000000) >= (va_address_from & 0xffffc0000000)) and ((va_address_to & 0xffffc0000000) >= (((va_address) | (i << 30)) & 0xffffc0000000))):
+            if ((page_table_i & 1) == 1):
+                if debug > 1:
+                    print("  PPE [0x%x] : 0x%016X (0x%016X)" % (i, page_table_i, (va_address | (i << 30))))
+                for clist in gdb_list_pages_from_PDE(va_address_from, va_address_to, (va_address | (i << 30))):
+                    if clist is not None:
+                        yield clist
+
+
+def gdb_list_pages_from_PXE(va_address_from, va_address_to):
+    start_index = (va_address_from >> 39) & 0x1ff
+    end_index = (va_address_to >> 39) & 0x1ff
+
+    current_page = get_va_memory(0xffff000000000000 | (cr3_self_offset << 39) | (cr3_self_offset << 30) | (cr3_self_offset << 21) | (cr3_self_offset << 12), 0x1000)
+
+    while start_index <= end_index:
+        page_table_i = struct.unpack('Q', current_page[start_index << 3:(start_index << 3)+8])[0]
+        if (page_table_i & 1) == 1:
+            if debug > 1:
+                print("  PXE [0x%x] : 0x%016X (0x%016X)" % (start_index, page_table_i, (0xffff000000000000 | (start_index << 39))))
+            for cpage in gdb_list_pages_from_PPE(va_address_from, va_address_to, 0xffff000000000000 | (start_index << 39)):
+                yield cpage
+        start_index += 1
+
+
+def gdb_get_pages_list_iter(va_address_from, va_address_to):
+    global bitness
+    for cres in gdb_list_pages_from_PXE(va_address_from, va_address_to):
+        yield cres
+
+
+def gdb_get_from_PXE(page_address):
+    global cache_pages
+
+    if page_address in cache_pages:
+        datas = cache_pages[page_address]
+    else:
+        if len(cache_pages) > 0x10000:
+            cache_pages = {}
+        datas = gdb_read_memory(page_address, 0x1000)
+        cache_pages[page_address] = datas
+    return datas
+
+
+def gdb_find_self_mapping_offset():
+    global cr3_self_offset
+    for i in range(0x100, 0x200):
+        cva = 0xffff000000000000 | (i << 39) | (i << 30) | (i << 21) | (i << 12)
+        raw_page = gdb_read_memory(cva, 0x1000)
+        if raw_page is not None and len(raw_page) == 0x1000:
+            indx_val = struct.unpack('Q', raw_page[i << 3:(i+1) << 3])[0]
+            if (indx_val & 0xff) == 0x63:
+                cr3_self_offset = i
+                return
+
+
+def gdb_find_ntoskrnl_base_from_general_registers():
+    general_register_raw = gdb_send(b'g')
+
+    if general_register_raw is not None and general_register_raw.startswith(b'$'):
+        general_register_raw = general_register_raw[1:]
+        for i in range(len(general_register_raw) >> 3):
+            reg_value = int(general_register_raw[i << 3:(i << 3)+16][::-1], 16)
+            nt_addr = find_ntoskrnl_from_address_back(reg_value)
+            if nt_addr is not None:
+                return nt_addr
+
+
+def find_ntoskrnl_from_address_back(address):
+    content = get_va_memory(address, 0x1000)
+    while content is not None and len(content) == 0x1000:
+        if content.startswith(b'MZ') and b'ALMOSTRO' in content and b'PAGEKD' in content and b'INITKDBG' in content:
+            return address
+        address -= 0x1000
+        content = get_va_memory(address, 0x1000)
+
+
+def find_ntoskrnl_base_from_crawling():
+    for page_address, page_infos in get_pages_list_iter(0xfffff80000000000, 0xffffffffffffffff):
+        content = get_va_memory(page_address, 0x1000)
+        if content is not None and len(content) == 0x1000:
+            if content.startswith(b'MZ') and b'ALMOSTRO' in content and b'PAGEKD' in content and b'INITKDBG' in content:
+                return page_address
+
+
+def gdb_find_ntoskrnl_base():
+    addr = gdb_find_ntoskrnl_base_from_general_registers()
+    if addr is not None:
+        if debug > 0:
+            print("[*] Found nt base in general registers")
+        return addr
+    addr = find_ntoskrnl_base_from_crawling()
+    if debug > 0:
+        print("Crawling memory to find Ntoskrnl...")
+    if addr is not None:
+        if debug > 0:
+            print("[*] Found nt base by crawling memory")
+        return addr
+
+
+def gdb_init_ntoskrnl_module_list():
+    global Drivers_list
+    global cr3
+    global psLoadedModuleList
+
+    if Drivers_list is not None:
+        return
+
+    ntoskrnl_base = gdb_find_ntoskrnl_base()
+    if ntoskrnl_base is None or ntoskrnl_base == 0:
+        print("[!] Ntoskrnl init failed :(")
+        return
+
+    Drivers_list = {}
+    cr3 = 0x1000
+
+    if ntoskrnl_base > 0:
+        decode_pe(ntoskrnl_base)
+        if ntoskrnl_base in Drivers_list and 'PE' in Drivers_list[ntoskrnl_base] and 'EAT' in Drivers_list[ntoskrnl_base]['PE']:
+            if b'PsLoadedModuleList' in Drivers_list[ntoskrnl_base]['PE']['EAT']:
+                psLoadedModuleList = Drivers_list[ntoskrnl_base]['PE']['EAT'][b'PsLoadedModuleList']
+
+
+def gdb_setup(ip, port):
+    global cr3_self_offset
+    global gdb_socket_infos
+    gdb_socket_infos = {'ip': ip, 'port': port}
+    global get_from_PXE
+    get_from_PXE = gdb_get_from_PXE
+    global get_pages_list_iter
+    get_pages_list_iter = gdb_get_pages_list_iter
+
+    gdb_connect()
+    gdb_send(b'!')  # Advise the target that extended remote debugging is being used
+    gdb_send(b'?')  # Report why the target halted.
+    gdb_find_self_mapping_offset()
+    if cr3_self_offset is None:
+        print("[!] Can't find CR3 self mapping :(")
+        return False
+    if debug > 0:
+        print("[*] Self mapping offset : 0x%x" % (cr3_self_offset))
+    gdb_init_ntoskrnl_module_list()
+    if psLoadedModuleList is None:
+        print("[!] Ntoskrnl not found :(")
+        return False
+    return True
+
+
+def gdb_disconnect():
+    gdb_socket.close()
+
+
+def gdb_connect():
+    global gdb_socket
+    gdb_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    gdb_socket.connect((gdb_socket_infos['ip'], gdb_socket_infos['port']))
+
+
 def readFromFile_aff4(offset, length):
     global cache_pages_file
     global phys_to_file
@@ -1242,134 +1543,134 @@ def get_rights_from_page_table(PT_entry):
 
 def list_pages_from_PTE(PTE_entry, va_address, va_address_from=0, va_address_to=0xffffffffffffffff):
     global debug
-    list_va_pages = {}
     page_tables = readFromPhys(PTE_entry, 0x1000)
+    phys_list = {}
 
-    if page_tables is None or len(page_tables) < 0x1000:
-        return None
+    if page_tables is not None and len(page_tables) == 0x1000:
+        for i in range(0x1000 >> 3):
+            page_table_i = struct.unpack('Q', page_tables[i << 3:(i << 3)+8])[0]
+            ptr_page_table_i = (page_table_i & 0x0000FFFFFFFFF000)
+            cva_address = ((va_address | (i << 12)) & 0xfffffffff000)
 
-    for i in range(0x1000 >> 3):
-        page_table_i = raw_to_int(page_tables[i << 3:(i << 3)+8])
-        if ((page_table_i & 1) == 0):
-            page_table_i |= ((page_table_i & 0x7ff0000000000000) >> 52)
-        ptr_page_table_i = (page_table_i & 0x0000FFFFFFFFF000)
-        cva_address = ((va_address | (i << 12)) & 0xfffffffff000)
-        if cva_address >= (va_address_from & 0xfffffffff000) and cva_address < (va_address_to & 0xfffffffff000):
-            if (page_table_i & 0x801):
-                if debug > 1:
-                    print("      PTE [0x%x] : 0x%016X (0x%016X)" % (i, page_table_i, (va_address | (i << 12))))
-                right = get_rights_from_page_table(page_table_i)
-                list_va_pages[(va_address | (i << 12))] = {}
-                list_va_pages[(va_address | (i << 12))]["right"] = right
-                list_va_pages[(va_address | (i << 12))]["phys"] = ptr_page_table_i
-            elif ((page_table_i & 0x400) == 0x400):
-                va_of_pte = page_table_i >> 0x10
-                real_entry = get_qword_from_va(va_of_pte)
-                if real_entry is not None:
+            if cva_address >= (va_address_from & 0xfffffffff000) and cva_address < (va_address_to & 0xfffffffff000):
+                if ptr_page_table_i in phys_list:
+                    continue
+                phys_list[ptr_page_table_i] = None
+                if (page_table_i & 0x1):
                     if debug > 1:
-                        print("      PTE Prototype : 0x%016X" % (real_entry))
-                    right = get_rights_from_page_table(real_entry)
-                    list_va_pages[(va_address | (i << 12))] = {}
-                    list_va_pages[(va_address | (i << 12))]["right"] = right
-                    list_va_pages[(va_address | (i << 12))]["phys"] = ptr_page_table_i
-    return list_va_pages
+                        print("      PTE [0x%x] : 0x%016X (0x%016X)" % (i, page_table_i, (va_address | (i << 12))))
+                    right = get_rights_from_page_table(page_table_i)
+                    cdesc = {}
+                    cdesc["right"] = right
+                    cdesc["phys"] = ptr_page_table_i
+                    yield [(va_address | (i << 12)), cdesc]
+                elif page_table_i & 0x400:
+                    va_of_pte = page_table_i >> 0x10
+                    real_entry = get_qword_from_va(va_of_pte)
+                    if real_entry is not None:
+                        if debug > 1:
+                            print("      PTE Prototype : 0x%016X" % (real_entry))
+                        right = get_rights_from_page_table(real_entry)
+                        cdesc = {}
+                        cdesc["right"] = right
+                        cdesc["phys"] = ptr_page_table_i
+                        cdesc["prot_pte"] = True
+                        yield [(va_address | (i << 12)), cdesc]
 
 
 def list_pages_from_PDE(PDE_entry, va_address=0, va_address_from=0, va_address_to=0xffffffffffffffff):
     global debug
-    global total_buffer
-    list_va_pages = {}
-    page_table_list = []
 
     page_tables = readFromPhys(PDE_entry, 0x1000)
-    if page_tables is None or len(page_tables) < 0x1000:
-        return None
-
-    for i in range(0x1000 >> 3):
-        page_table_i = raw_to_int(page_tables[i << 3:(i << 3)+8])
-        if page_table_i in page_table_list:
-            continue
-        page_table_list.append(page_table_i)
-        ptr_page_table_i = (page_table_i & 0x0000FFFFFFFFF000)
-        if ((((va_address | (i << 21)) & 0xffffffe00000) >= (va_address_from & 0xffffffe00000)) and ((va_address_to & 0xffffffe00000) >= (((va_address) | (i << 21)) & 0xffffffe00000))):
-            if ((page_table_i & 1) == 1):
-                if ((page_table_i & 0x80) == 0x80):
-                    if debug > 1:
-                        print("    PDE [0x%x] : 0x%016X (0x%016X) - G" % (i, page_table_i, (va_address | (i << 21))))
-                    for y in range(0x1000 >> 3):
-                        if ((((va_address | (i << 21) | (y << 12) & 0xfffffffff000)) >= (va_address_from & 0xfffffffff000)) and (((va_address_to & 0xfffffffff000) > ((va_address) | (i << 21) | (y << 12)) & 0xfffffffff000))):
-                            right = get_rights_from_page_table(page_table_i)
-                            list_va_pages[(va_address | (i << 21))+(y << 12)] = {}
-                            list_va_pages[(va_address | (i << 21))+(y << 12)]["right"] = right
-                            list_va_pages[(va_address | (i << 21))+(y << 12)]["phys"] = ptr_page_table_i+(y << 12)
-                else:
-                    if debug > 1:
-                        print("    PDE [0x%x] : 0x%016X (0x%016X)" % (i, page_table_i, (va_address | (i << 21))))
-                    clist = list_pages_from_PTE(ptr_page_table_i, (va_address | (i << 21)), va_address_from, va_address_to)
-                    if clist is not None:
-                        list_va_pages.update(clist)
-    return list_va_pages
+    phys_list = {}
+    if page_tables is not None and len(page_tables) == 0x1000:
+        for i in range(0x1000 >> 3):
+            page_table_i = struct.unpack('Q', page_tables[i << 3:(i << 3)+8])[0]
+            ptr_page_table_i = (page_table_i & 0x0000FFFFFFFFF000)
+            if ((((va_address | (i << 21)) & 0xffffffe00000) >= (va_address_from & 0xffffffe00000)) and ((va_address_to & 0xffffffe00000) >= (((va_address) | (i << 21)) & 0xffffffe00000))):
+                if ptr_page_table_i in phys_list:
+                    continue
+                phys_list[ptr_page_table_i] = None
+                if ((page_table_i & 1) == 1):
+                    if ((page_table_i & 0x80) == 0x80):
+                        if debug > 1:
+                            print("    PDE [0x%x] : 0x%016X (0x%016X) - G" % (i, page_table_i, (va_address | (i << 21))))
+                        right = get_rights_from_page_table(page_table_i)
+                        for y in range(0x1000 >> 3):
+                            current_g_address = (va_address | (i << 21) | (y << 12)) & 0xfffffffff000
+                            if ((current_g_address >= (va_address_from & 0xfffffffff000)) and ((va_address_to & 0xfffffffff000) > (current_g_address))):
+                                cdesc = {}
+                                cdesc["right"] = right
+                                cdesc["phys"] = ptr_page_table_i+(y << 12)
+                                cdesc["big_page"] = True
+                                yield [(va_address | (i << 21))+(y << 12), cdesc]
+                    else:
+                        if debug > 1:
+                            print("    PDE [0x%x] : 0x%016X (0x%016X)" % (i, page_table_i, (va_address | (i << 21))))
+                        for clist in list_pages_from_PTE(ptr_page_table_i, (va_address | (i << 21)), va_address_from, va_address_to):
+                            if clist is not None:
+                                yield clist
 
 
 def list_pages_from_PPE(PPE_entry, va_address=0, va_address_from=0, va_address_to=0xffffffffffffffff):
     global debug
-    list_va_pages = {}
-    page_table_list = []
 
     page_tables = readFromPhys(PPE_entry, 0x1000)
-    if page_tables is None or len(page_tables) < 0x1000:
-        return None
-
-    for i in range(0x1000 >> 3):
-        page_table_i = raw_to_int(page_tables[i << 3:(i << 3)+8])
-        if page_table_i in page_table_list:
-            continue
-        page_table_list.append(page_table_i)
-        ptr_page_table_i = (page_table_i & 0x0000FFFFFFFFF000)
-        if ((((va_address | (i << 30)) & 0xffffc0000000) >= (va_address_from & 0xffffc0000000)) and ((va_address_to & 0xffffc0000000) >= (((va_address) | (i << 30)) & 0xffffc0000000))):
-            if ((page_table_i & 1) == 1):
-                if debug > 1:
-                    print("  PPE [0x%x] : 0x%016X (0x%016X)" % (i, page_table_i, (va_address | (i << 30))))
-                clist = list_pages_from_PDE(ptr_page_table_i, (va_address | (i << 30)), va_address_from, va_address_to)
-                if clist is not None:
-                    list_va_pages.update(clist)
-    return list_va_pages
+    phys_list = {}
+    if page_tables is not None and len(page_tables) == 0x1000:
+        for i in range(0x1000 >> 3):
+            page_table_i = struct.unpack('Q', page_tables[i << 3:(i << 3)+8])[0]
+            ptr_page_table_i = (page_table_i & 0x0000FFFFFFFFF000)
+            if ((((va_address | (i << 30)) & 0xffffc0000000) >= (va_address_from & 0xffffc0000000)) and ((va_address_to & 0xffffc0000000) >= (((va_address) | (i << 30)) & 0xffffc0000000))):
+                if ptr_page_table_i in phys_list:
+                    continue
+                phys_list[ptr_page_table_i] = None
+                if ((page_table_i & 1) == 1):
+                    if debug > 1:
+                        print("  PPE [0x%x] : 0x%016X (0x%016X)" % (i, page_table_i, (va_address | (i << 30))))
+                    for clist in list_pages_from_PDE(ptr_page_table_i, (va_address | (i << 30)), va_address_from, va_address_to):
+                        if clist is not None:
+                            yield clist
 
 
 def list_pages_from_PXE(PXE_entry, va_address_from=0, va_address_to=0xffffffffffffffff):
     global debug
     va_address = 0
-    list_va_pages = {}
-    page_table_list = []
     page_tables = readFromPhys(PXE_entry, 0x1000)
-    if page_tables is None or len(page_tables) < 0x1000:
-        return None
-
-    for i in range(0x1000 >> 3):
-        page_table_i = raw_to_int(page_tables[i << 3:(i << 3)+8])
-        if page_table_i in page_table_list:
-            continue
-        page_table_list.append(page_table_i)
-        ptr_page_table_i = (page_table_i & 0x0000FFFFFFFFF000)
-        if (i == 0x100):
-            va_address = 0xFFFF000000000000
-        if ((((va_address | (i << 39)) & 0xff8000000000) >= (va_address_from & 0xff8000000000)) and ((va_address_to & 0xff8000000000) >= (((va_address) | (i << 39)) & 0xff8000000000))):
-            if ((page_table_i & 1) == 1):
-                if debug > 1:
-                    print("PXE [0x%x] : 0x%016X (0x%016X)" % (i, page_table_i, (va_address | (i << 39))))
-                clist = list_pages_from_PPE(ptr_page_table_i, (va_address | (i << 39)), va_address_from, va_address_to)
-                if clist is not None:
-                    list_va_pages.update(clist)
-    return list_va_pages
+    phys_list = {}
+    if page_tables is not None and len(page_tables) == 0x1000:
+        for i in range(0x1000 >> 3):
+            page_table_i = struct.unpack('Q', page_tables[i << 3:(i << 3)+8])[0]
+            ptr_page_table_i = (page_table_i & 0x0000FFFFFFFFF000)
+            if (i == 0x100):
+                va_address = 0xFFFF000000000000
+            if ((((va_address | (i << 39)) & 0xff8000000000) >= (va_address_from & 0xff8000000000)) and ((va_address_to & 0xff8000000000) >= (((va_address) | (i << 39)) & 0xff8000000000))):
+                if ptr_page_table_i in phys_list:
+                    continue
+                phys_list[ptr_page_table_i] = None
+                if ((page_table_i & 1) == 1):
+                    if debug > 1:
+                        print("PXE [0x%x] : 0x%016X (0x%016X)" % (i, page_table_i, (va_address | (i << 39))))
+                    for clist in list_pages_from_PPE(ptr_page_table_i, (va_address | (i << 39)), va_address_from, va_address_to):
+                        yield clist
 
 
-def get_pages_list(va_address_from, va_address_to):
+def get_pages_list_iter(va_address_from, va_address_to):
     global bitness
     global cr3
     if bitness == 64:
-        return list_pages_from_PXE(cr3, va_address_from, va_address_to)
+        for cres in list_pages_from_PXE(cr3, va_address_from, va_address_to):
+            yield cres
     else:
-        return list_pages_from_PPE(cr3, (va_address_from & 0xff8000000000), va_address_from, va_address_to)
+        for cres in list_pages_from_PPE(cr3, (va_address_from & 0xff8000000000), va_address_from, va_address_to):
+            yield cres
+
+
+def get_pages_list(va_address_from, va_address_to):
+    result = {}
+    for page_addr, cdesc in get_pages_list_iter(va_address_from, va_address_to):
+        result[page_addr] = cdesc
+    return result
 
 
 def get_page_rights(va_address):
@@ -1595,7 +1896,19 @@ def detect_eprocess_struct(process_name=b"System"):
 
         c_off = 0
         while c_off < 0xc00:
-            if isPXE(get_sizet_from_va(address-0x600+c_off) & 0xfffffffffffffffc):
+            if is_gdb:
+                cpointer = get_sizet_from_va(address-0x600+c_off)
+                if (cpointer >> 48) == 0xffff:
+                    base_pointer = find_pool_chunck(cpointer)
+                    if base_pointer is not None:
+                        pool_chunk = get_pool_tag(base_pointer)
+                        if pool_chunk['tag'] == b'Thre':
+                            prev_cr3 = get_sizet_from_va((address-0x600+c_off)-8)
+                            if prev_cr3 is not None and prev_cr3 > 0x10000 and prev_cr3 < 0x10000000000 and (prev_cr3 & 0xffc) == 0:
+                                EPROCESS_Struct["CR3"] = c_off-8-0x600
+                                EPROCESS_Struct["ThreadListHead"] = c_off-0x600
+                                break
+            elif isPXE(get_sizet_from_va(address-0x600+c_off) & 0xfffffffffffffffc):
                 EPROCESS_Struct["CR3"] = c_off-0x600
                 EPROCESS_Struct["ThreadListHead"] = c_off+8-0x600
                 break
@@ -1607,7 +1920,19 @@ def detect_eprocess_struct(process_name=b"System"):
             tb_addr.append(next_addr)
             next_addr = get_sizet_from_va(next_addr)
             while c_off < 0xc00:
-                if isPXE(get_sizet_from_va(next_addr-0x600+c_off) & 0xfffffffffffffffc):
+                if is_gdb:
+                    cpointer = get_sizet_from_va(address-0x600+c_off)
+                    if (cpointer >> 48) == 0xffff:
+                        base_pointer = find_pool_chunck(cpointer)
+                        if base_pointer is not None:
+                            pool_chunk = get_pool_tag(base_pointer)
+                            if pool_chunk['tag'] == b'Thre':
+                                prev_cr3 = get_sizet_from_va((address-0x600+c_off)-8)
+                                if prev_cr3 is not None and prev_cr3 > 0x10000 and prev_cr3 < 0x10000000000 and (prev_cr3 & 0xffc) == 0:
+                                    EPROCESS_Struct["CR3"] = c_off-8-0x600
+                                    EPROCESS_Struct["ThreadListHead"] = c_off-0x600
+                                    break
+                elif isPXE(get_sizet_from_va(next_addr-0x600+c_off) & 0xfffffffffffffffc):
                     EPROCESS_Struct["CR3"] = c_off-0x600
                     EPROCESS_Struct["ThreadListHead"] = c_off+8-0x600
                     break
@@ -1618,7 +1943,9 @@ def detect_eprocess_struct(process_name=b"System"):
             c_off = -0x200
             nn_eprocess = get_sizet_from_va(get_sizet_from_va(get_sizet_from_va(address)))
             new_cr3 = get_qword_from_va(nn_eprocess+EPROCESS_Struct["CR3"])
-            if isPXE(new_cr3):
+            if is_gdb:
+                EPROCESS_Struct["PEB"] = c_off
+            elif isPXE(new_cr3):
                 cr3 = new_cr3
                 while c_off < 0x600:
                     if is_PEB(get_sizet_from_va(nn_eprocess+c_off)):
@@ -3730,7 +4057,8 @@ def get_driver_section(driver_name, section_name):
     drv_addr = resolve_symbol(driver_name)
     if drv_addr is None:
         return None
-    decode_pe(drv_addr)
+    if 'PE' not in Drivers_list[drv_addr]:
+        decode_pe(drv_addr)
     if 'PE' in Drivers_list[drv_addr]:
         for csection in Drivers_list[drv_addr]['PE']['Sections']:
             if csection['name'] == section_name:
@@ -4322,21 +4650,9 @@ def check_sensitives_devices():
 
 
 def check_PE_in_kernel(check_file=True):
-    global kernel_mapping
     global bitness
 
     driver_list = get_drivers_list()
-
-    if kernel_mapping is None:
-        if bitness == 64:
-            kernel_mapping = get_pages_list(0xffff800000000000, 0xffffffffffffffff)
-        else:
-            kernel_mapping = get_pages_list(0x80000000, 0xffffffff)
-        if debug > 0:
-            print("  [*] Pages list is carved : %d pages" % len(kernel_mapping))
-    pages = kernel_mapping
-
-    pe_list = []
 
     if bitness == 64:
         min_addr = 0xffff800000000000
@@ -4344,20 +4660,33 @@ def check_PE_in_kernel(check_file=True):
     else:
         min_addr = 0x80000000
         max_addr = 0xffffffff
-    print(" Min driver address : %x" % min_addr)
-    print(" Max driver address : %x" % max_addr)
 
-    for page in sorted(list(pages.keys())):
-        if not ((page+0x1000) in pages):
+    phys_addresses = {}
+    prev_pages = []
+    for page_address, page_infos in get_pages_list_iter(min_addr, max_addr):
+        if len(phys_addresses) > 5000:
+            phys_addresses = {}
+        if page_infos['phys'] in phys_addresses:
             continue
-        if not pages[page+0x1000]['right']['exec']:
+        phys_addresses[page_infos['phys']] = None
+        if len(prev_pages) > 5000:
+            prev_pages = prev_pages[-4:]
+        prev_pages.append([page_address, page_infos])
+        if not page_infos['right']['exec']:
             continue
+        if len(prev_pages) > 2:
+            if prev_pages[-3][0] == (page_address-0x2000):
+                continue
+            if prev_pages[-2][0] != (page_address-0x1000):
+                continue
+            if prev_pages[-2][1]['right']['exec']:
+                continue
+        page = page_address-0x1000
         if bitness == 64:
             page = (page | 0xffff000000000000)
         if page > min_addr and page < max_addr:
             mem_dmp = get_va_memory(page, 0x1000)
             if mem_dmp is not None and is_PE_Entry(mem_dmp):
-                pe_list.append(pe_list)
                 if page in driver_list:
                     if check_file:
                         if isFile(driver_list[page]['Name']):
@@ -4641,7 +4970,8 @@ def check_critical_drivers(driver_name=None):
         print("Checking %s" % cdriver)
         diffs = check_driver_integrity(driver_path=cdriver)
         if diffs is None:
-            print("  [!] Impossible to check %s" % (cdriver))
+            if debug > 0:
+                print("  [!] Impossible to check %s" % (cdriver))
             continue
         for offset in sorted(list(diffs.keys())):
             ori_datas = diffs[offset][1]
@@ -5192,11 +5522,11 @@ def is_PG_function(cfunc):
                         continue
                     if instr_list[cinstr][0] == 3:
                         byte0, byte1, byte2 = struct.unpack("BBB", get_va_memory(cinstr, 3))
-                        if byte0 in [0x48, 0x4c, 0x4d] and byte1 in [0xd0, 0xd1, 0xd2, 0xd3] and (byte2 & 0xf0) == 0xc0:
+                        if byte0 in [0x48, 0x49, 0x4c, 0x4d] and byte1 in [0xd0, 0xd1, 0xd2, 0xd3] and (byte2 & 0xf0) == 0xc0:
                             return 1
                     if instr_list[cinstr][0] == 4:
                         byte0, byte1, byte2 = struct.unpack("BBB", get_va_memory(cinstr, 3))
-                        if byte0 in [0x48, 0x4c, 0x4d] and byte1 in [0xc0, 0xc1, 0xc2, 0xc3] and (byte2 & 0xf0) == 0xc0:
+                        if byte0 in [0x48, 0x49, 0x4c, 0x4d] and byte1 in [0xc0, 0xc1, 0xc2, 0xc3] and (byte2 & 0xf0) == 0xc0:
                             return 1
                     if len(instr_list[cinstr]) > 2 and instr_list[cinstr][1].startswith('jcc') and not (instr_list[cinstr][2] in all_instr_base):
                         all_instr_base[instr_list[cinstr][2]] = False
@@ -5508,10 +5838,6 @@ def decode_pg_context(pg_context_address):
         if offset > 0:
             print("    - PG function table start at +0x%x" % (offset))
 
-    else:
-        print("ExAcquireResourceSharedLite not found :-(")
-        return
-
 
 def find_PG_Context():
     is_pg_initialized = 0
@@ -5656,11 +5982,11 @@ def find_PG_DPC_in_ntoskrnl():
         if not is_kernel_space(cdpc_DeferredRoutine):
             continue
         rights = get_page_rights(cdpc_DeferredRoutine)
-        if rights is None and not rights['exec']:
+        if rights is None or not rights['exec']:
             continue
         is_pg_active = is_pg_in_dpc(section_addr+(i << 3))
         if is_pg_active > 1:
-            print("  [*] PG armed DPC found at 0%x" % (section_addr+(i << 3)))
+            print("  [*] PG armed DPC found at 0x%x" % (section_addr+(i << 3)))
             return is_pg_active
     return is_pg_active
 
@@ -6015,6 +6341,12 @@ while (curr_opt < len(sys.argv)):
         debug = 1
     elif (sys.argv[curr_opt] == '-vv'):
         debug = 2
+    elif (sys.argv[curr_opt] == '-gdb'):
+        if len(sys.argv) > (curr_opt+2) and not sys.argv[curr_opt+1].startswith('-'):
+            gdb_setup(sys.argv[curr_opt+1], int(sys.argv[curr_opt+2], 0))
+        else:
+            gdb_setup("127.0.0.1", 8864)
+        is_gdb = True
     elif (sys.argv[curr_opt] == '-l'):
         load_driver()
         fileDmp = r"NoFile"
@@ -6027,7 +6359,7 @@ while (curr_opt < len(sys.argv)):
         fileDmp = sys.argv[curr_opt]
     curr_opt += 1
 
-if dev_handle is None:
+if dev_handle is None and not is_gdb:
     file_fd = open(fileDmp, "rb")
     rawdata = file_fd.read(0x4000)
     if rawdata[:8] in [b"PAGEDUMP", b"PAGEDU64"]:
@@ -6065,6 +6397,8 @@ def is_current_CR3_valid():
     global cr3
     global cr3_self_offset
     global force_cr3
+    if is_gdb:
+        return True
     if not force_cr3 and (cr3 is None or not isPXE(cr3)):
         if debug > 0:
             print("  [!] CR3 is invalid, try fo foud a new CR3")
@@ -6136,6 +6470,8 @@ except Exception as e:
 while True:
     try:
         if shell_command is None:
+            if is_gdb:
+                gdb_disconnect()
             commands = get_command("#>> ")
         else:
             commands = shell_command
@@ -6146,6 +6482,8 @@ while True:
         sys.exit()
     if is_live:
         flush_caches()
+    if is_gdb:
+        gdb_connect()
     try:
         commands = ";"+commands+";"
         commands = commands.replace(';all;', ';print Check : cidt;cidt;print Check : cirp;cirp;print Check : cdev;cdev;print Check : ccb;ccb;print Check : cio;cio;print Check : cndis;cndis;print Check : cnetio;cnetio;print Check : cfltmgr;cfltmgr;print Check : ctimer;ctimer;print Check : fpg;fpg;print Check : ci;ci;print Check : cci;cci;print Check : pe;pe;')
