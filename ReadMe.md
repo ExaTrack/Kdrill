@@ -4,7 +4,7 @@ Kdrill is a tool to analyze the kernel land of Windows 64b systems (tested from 
 
 The code is compatible with python2/3 without dependencies and can perfom checks without Microsoft symbols or Internet connectivity.
 
-For live memory/kernel analysis, the `Winpmem` driver is used and `Kdrill` interfaces itself with the driver, another possibility is to connect to a remote GDB server. KDrill can also analyze Full crash dumps and Kernel crash dumps (mainly stored in `C:\Windows\MEMORY.DMP`) and a fucked version of AFF4 dumps (zip, but not zipped).
+For live memory/kernel analysis, the `Winpmem` driver is used and `Kdrill` interfaces itself with the driver, another possibility is to connect to a remote GDB server. KDrill can also analyze Full crash dumps and Kernel crash dumps (mainly stored in `C:\Windows\MEMORY.DMP`), full raw memory dump, and a fucked version of AFF4 dumps (zip, but not zipped).
 
 `Kdrill` accesses the physical memory and decodes/re-builds the OS internals structures to explore them, and to verify their intergrity.
 
@@ -16,7 +16,7 @@ The following checks are performed:
 - FltMgr callbacks
 - KTimers DPC functions
 - IRP driver's tables
-- Driver signing global variables avec callbacks
+- Driver signing global variables with callbacks
 - NDIS filters and callbacks
 - NetIO/FwpkCLNT filtering dispatch
 - Devices and their attached device objects
