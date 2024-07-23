@@ -1145,6 +1145,32 @@ def set_infos_from_aff4_dump(fileDump):
         print("[!] Winpmem header is malformed")
 
 
+def set_infos_from_raw_dump(fileDump):
+    global readFromFile
+    global phys_to_file
+    global Drivers_list
+    global psLoadedModuleList
+
+    phys_to_file = [[0, os.stat(fileDump).st_size, 0]]
+
+    print("[*] Searching a valid CR3 in raw dump")
+    cr3_val = find_valid_cr3()
+    if cr3_val is None:
+        print("[!] No page corresponding to a CR3 was found :(")
+    else:
+        ntoskrnl_base = find_ntoskrnl_base_from_crawling()
+        if ntoskrnl_base is None:
+            print("[!] Imagebase of NtOskrnl was not found :(")
+            return None
+        else:
+            Drivers_list = {}
+            if ntoskrnl_base > 0:
+                decode_pe(ntoskrnl_base)
+                if ntoskrnl_base in Drivers_list and 'PE' in Drivers_list[ntoskrnl_base] and 'EAT' in Drivers_list[ntoskrnl_base]['PE']:
+                    if b'PsLoadedModuleList' in Drivers_list[ntoskrnl_base]['PE']['EAT']:
+                        psLoadedModuleList = Drivers_list[ntoskrnl_base]['PE']['EAT'][b'PsLoadedModuleList']
+
+
 def set_infos_from_crashdump_header(rawdata):
     global pfnDatabase
     global psLoadedModuleList
@@ -1974,11 +2000,11 @@ def find_valid_cr3(form_phys_addr=0):
             potential_PXE_0 = struct.unpack('Q', rawdata[0:8])[0]
             potential_PXE_fff = struct.unpack('Q', rawdata[0xff8:0x1000])[0]
             if (potential_PXE_0 & 0xfdf) == 0x847 and (potential_PXE_fff & 0xfff) == 0x63:
-                print("%x" % cpage_address)
                 for i in range(0x100):
                     if (struct.unpack('Q', rawdata[0x800+(i << 3):0x800+8+(i << 3)])[0] & 0x0000fffffffff000) == cpage_address:
                         cr3 = cpage_address
-                        print("  [*] CR3 found : 0x%X !" % cr3)
+                        if debug > 0:
+                            print("  [*] CR3 found : 0x%X !" % cr3)
                         return cr3
     if debug > 0:
         print("  [!] CR3 not found :(")
@@ -3805,7 +3831,7 @@ def detect_ndisCbIoList(address):
         sub_offset = 0
         while sub_offset < chunk_size:
             csname = get_unicode_from_va(address+sub_offset)
-            if csname is not None and len(csname) < 0x80:
+            if csname is not None and len(csname) < 0x80 and csname[:8].count(b'\x00') == 4:
                 csname = csname.replace(b"\x00", b'')
                 if not ('GUID' in ndisCbIo_struct['NDfv_ptr']) and csname.startswith(b'{'):
                     ndisCbIo_struct['NDfv_ptr']['GUID'] = sub_offset
@@ -3921,9 +3947,9 @@ def check_ndis_callbacks():
                 while address != 0 and address is not None:
                     if not is_kernel_space(address, 8):
                         break
-                    print("    Driver      : %s" % (get_unicode_from_va_no_zero(address+ndisCbIo_struct['NDfv_ptr']['driver']).decode()))
-                    print("    GUID        : %s" % (get_unicode_from_va_no_zero(address+ndisCbIo_struct['NDfv_ptr']['GUID']).decode()))
-                    print("    Description : %s" % (get_unicode_from_va_no_zero(address+ndisCbIo_struct['NDfv_ptr']['description']).decode()))
+                    print("    Driver      : %s" % (get_unicode_from_va_no_zero(address+ndisCbIo_struct['NDfv_ptr']['driver']).decode(errors='replace')))
+                    print("    GUID        : %s" % (get_unicode_from_va_no_zero(address+ndisCbIo_struct['NDfv_ptr']['GUID']).decode(errors='replace')))
+                    print("    Description : %s" % (get_unicode_from_va_no_zero(address+ndisCbIo_struct['NDfv_ptr']['description']).decode(errors='replace')))
                     i = ndisCbIo_struct['NDfv_ptr']['driver_name']+0x10
                     max_len = get_word_from_va(address+ndisCbIo_struct['NDfv_ptr']['size'])
                     while i < max_len:
@@ -6368,6 +6394,8 @@ if dev_handle is None and not is_gdb:
     elif rawdata[:2] == b"PK":
         file_fd.close()
         set_infos_from_aff4_dump(fileDmp)
+    else:
+        set_infos_from_raw_dump(fileDmp)
 
 
 def set_self_mapping_offset(force=False):
@@ -6420,10 +6448,6 @@ def flush_caches():
 
 
 is_current_CR3_valid()
-
-if get_va_from_offset is not None:
-    print("  [*] 0x%X is stored at physical memory address 0x%X" % (get_va_from_offset, get_phys_from_file_offset(get_va_from_offset)))
-
 
 help_str = "  all : perform all checks\n"
 help_str = "  ci : check if some drivers codes are modified (for file dump use \"offline 1\" command to download them from MS)\n"
