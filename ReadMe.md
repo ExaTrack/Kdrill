@@ -13,6 +13,7 @@ The following checks are performed:
 - Drivers in memory code (compared to on-disk version)
 - Callbacks of kernel objects and internal ntoskrnl lists
 - PlugAndPlay tree and filters
+- Kernel types callbacks
 - FltMgr callbacks
 - KTimers DPC functions
 - IRP driver's tables
@@ -182,6 +183,7 @@ Help infos.
   ccb : check Callback directory
   cndis : check NDIS callbacks
   cnetio : check FwpkCLNT/NetIo callbacks
+  cktypes : check kernel types callbacks
   cfltmgr : check FltMgr callbacks
   ctimer : check DPC timers
   cidt : check IDT entries
@@ -192,6 +194,8 @@ Help infos.
   list start end : display memory
   lm : list modules
   dump addr length: display memory
+  !addr addr: get infos on the address
+  dqs addr [length]: display memory with informations
   d[bdq] addr [length]: display memory
   !d[bdq] addr [length]: display physical memory
   fpool ADDR : Find pool chunck of address

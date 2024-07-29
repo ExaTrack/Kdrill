@@ -13,6 +13,8 @@ import zipfile
 import ctypes
 import socket
 
+import ms_infos
+
 
 ctypes.windll.kernel32.Wow64DisableWow64FsRedirection(ctypes.byref(ctypes.c_long()))
 
@@ -77,14 +79,14 @@ struct_FltmgrFrame = None
 struct_FltmgrInstance = None
 struct_FltmgrFltFilter = None
 struct_Pfn = None
+struct_PsProcessType = None
+struct_ObFl = None
 
 Driver_list_Struct = None
 Drivers_list_addr = None
 
 
 irp_mj_list = ["IRP_MJ_CREATE", "IRP_MJ_CREATE_NAMED_PIPE", "IRP_MJ_CLOSE", "IRP_MJ_READ", "IRP_MJ_WRITE", "IRP_MJ_QUERY_INFORMATION", "IRP_MJ_SET_INFORMATION", "IRP_MJ_QUERY_EA", "IRP_MJ_SET_EA", "IRP_MJ_FLUSH_BUFFERS", "IRP_MJ_QUERY_VOLUME_INFORMATION", "IRP_MJ_SET_VOLUME_INFORMATION", "IRP_MJ_DIRECTORY_CONTROL", "IRP_MJ_FILE_SYSTEM_CONTROL", "IRP_MJ_DEVICE_CONTROL", "IRP_MJ_INTERNAL_DEVICE_CONTROL", "IRP_MJ_SHUTDOWN", "IRP_MJ_LOCK_CONTROL", "IRP_MJ_CLEANUP", "IRP_MJ_CREATE_MAILSLOT", "IRP_MJ_QUERY_SECURITY", "IRP_MJ_SET_SECURITY", "IRP_MJ_POWER", "IRP_MJ_SYSTEM_CONTROL", "IRP_MJ_DEVICE_CHANGE", "IRP_MJ_QUERY_QUOTA", "IRP_MJ_SET_QUOTA", "IRP_MJ_PNP"]
-
-ms_driver_lsit = [b"c:\\windows\\system32\\ci.dll", b"c:\\windows\\system32\\drivers\\wd\\wdnisdrv.sys", b"c:\\windows\\system32\\drivers\\1394bus.sys", b"c:\\windows\\system32\\drivers\\1394ohci.sys", b"c:\\windows\\system32\\drivers\\acpi.sys", b"c:\\windows\\system32\\drivers\\acpidev.sys", b"c:\\windows\\system32\\drivers\\acpiex.sys", b"c:\\windows\\system32\\drivers\\acpipagr.sys", b"c:\\windows\\system32\\drivers\\acpipmi.sys", b"c:\\windows\\system32\\drivers\\acpitime.sys", b"c:\\windows\\system32\\drivers\\adp94xx.sys", b"c:\\windows\\system32\\drivers\\adpahci.sys", b"c:\\windows\\system32\\drivers\\adpu320.sys", b"c:\\windows\\system32\\drivers\\afd.sys", b"c:\\windows\\system32\\drivers\\agilevpn.sys", b"c:\\windows\\system32\\drivers\\agp440.sys", b"c:\\windows\\system32\\drivers\\ahcache.sys", b"c:\\windows\\system32\\drivers\\aliide.sys", b"c:\\windows\\system32\\drivers\\amdide.sys", b"c:\\windows\\system32\\drivers\\amdk8.sys", b"c:\\windows\\system32\\drivers\\amdppm.sys", b"c:\\windows\\system32\\drivers\\amdsata.sys", b"c:\\windows\\system32\\drivers\\amdsbs.sys", b"c:\\windows\\system32\\drivers\\amdxata.sys", b"c:\\windows\\system32\\drivers\\appid.sys", b"c:\\windows\\system32\\drivers\\applockerfltr.sys", b"c:\\windows\\system32\\drivers\\arc.sys", b"c:\\windows\\system32\\drivers\\arcsas.sys", b"c:\\windows\\system32\\drivers\\asyncmac.sys", b"c:\\windows\\system32\\drivers\\atapi.sys", b"c:\\windows\\system32\\drivers\\ataport.sys", b"c:\\windows\\system32\\drivers\\b57nd60a.sys", b"c:\\windows\\system32\\drivers\\basicdisplay.sys", b"c:\\windows\\system32\\drivers\\basicrender.sys", b"c:\\windows\\system32\\drivers\\battc.sys", b"c:\\windows\\system32\\drivers\\beep.sys", b"c:\\windows\\system32\\drivers\\blbdrive.sys", b"c:\\windows\\system32\\drivers\\bowser.sys", b"c:\\windows\\system32\\drivers\\brfiltlo.sys", b"c:\\windows\\system32\\drivers\\brfiltup.sys", b"c:\\windows\\system32\\drivers\\bridge.sys", b"c:\\windows\\system32\\drivers\\brserid.sys", b"c:\\windows\\system32\\drivers\\brserwdm.sys", b"c:\\windows\\system32\\drivers\\brusbmdm.sys", b"c:\\windows\\system32\\drivers\\brusbser.sys", b"c:\\windows\\system32\\drivers\\btampm.sys", b"c:\\windows\\system32\\drivers\\bthavrcptg.sys", b"c:\\windows\\system32\\drivers\\bthenum.sys", b"c:\\windows\\system32\\drivers\\bthhfenum.sys", b"c:\\windows\\system32\\drivers\\bthhfhid.sys", b"c:\\windows\\system32\\drivers\\bthmodem.sys", b"c:\\windows\\system32\\drivers\\bthpan.sys", b"c:\\windows\\system32\\drivers\\bthport.sys", b"c:\\windows\\system32\\drivers\\bthusb.sys", b"c:\\windows\\system32\\drivers\\buttonconverter.sys", b"c:\\windows\\system32\\drivers\\bxvbda.sys", b"c:\\windows\\system32\\drivers\\cad.sys", b"c:\\windows\\system32\\drivers\\capimg.sys", b"c:\\windows\\system32\\drivers\\cdfs.sys", b"c:\\windows\\system32\\drivers\\cdrom.sys", b"c:\\windows\\system32\\drivers\\cea.sys", b"c:\\windows\\system32\\drivers\\circlass.sys", b"c:\\windows\\system32\\drivers\\classpnp.sys", b"c:\\windows\\system32\\drivers\\cldflt.sys", b"c:\\windows\\system32\\drivers\\clfs.sys", b"c:\\windows\\system32\\drivers\\clipsp.sys", b"c:\\windows\\system32\\drivers\\cmbatt.sys", b"c:\\windows\\system32\\drivers\\cmdide.sys", b"c:\\windows\\system32\\drivers\\cmimcext.sys", b"c:\\windows\\system32\\drivers\\cng.sys", b"c:\\windows\\system32\\drivers\\cnghwassist.sys", b"c:\\windows\\system32\\drivers\\compbatt.sys", b"c:\\windows\\system32\\drivers\\compositebus.sys", b"c:\\windows\\system32\\drivers\\condrv.sys", b"c:\\windows\\system32\\drivers\\crashdmp.sys", b"c:\\windows\\system32\\drivers\\crcdisk.sys", b"c:\\windows\\system32\\drivers\\csc.sys", b"c:\\windows\\system32\\drivers\\dam.sys", b"c:\\windows\\system32\\drivers\\devauthe.sys", b"c:\\windows\\system32\\drivers\\dfsc.sys", b"c:\\windows\\system32\\drivers\\discache.sys", b"c:\\windows\\system32\\drivers\\disk.sys", b"c:\\windows\\system32\\drivers\\diskdump.sys", b"c:\\windows\\system32\\drivers\\dmpusbstor.sys", b"c:\\windows\\system32\\drivers\\dmvsc.sys", b"c:\\windows\\system32\\drivers\\drmk.sys", b"c:\\windows\\system32\\drivers\\drmkaud.sys", b"c:\\windows\\system32\\drivers\\dumpata.sys", b"c:\\windows\\system32\\drivers\\dumpfve.sys", b"c:\\windows\\system32\\drivers\\dumpsd.sys", b"c:\\windows\\system32\\drivers\\dumpsdport.sys", b"c:\\windows\\system32\\drivers\\dumpstorport.sys", b"c:\\windows\\system32\\drivers\\dxapi.sys", b"c:\\windows\\system32\\drivers\\dxg.sys", b"c:\\windows\\system32\\drivers\\dxgkrnl.sys", b"c:\\windows\\system32\\drivers\\dxgmms1.sys", b"c:\\windows\\system32\\drivers\\dxgmms2.sys", b"c:\\windows\\system32\\drivers\\ehstorclass.sys", b"c:\\windows\\system32\\drivers\\ehstortcgdrv.sys", b"c:\\windows\\system32\\drivers\\elxstor.sys", b"c:\\windows\\system32\\drivers\\errdev.sys", b"c:\\windows\\system32\\drivers\\evbda.sys", b"c:\\windows\\system32\\drivers\\exfat.sys", b"c:\\windows\\system32\\drivers\\fastfat.sys", b"c:\\windows\\system32\\drivers\\fdc.sys", b"c:\\windows\\system32\\drivers\\filecrypt.sys", b"c:\\windows\\system32\\drivers\\fileinfo.sys", b"c:\\windows\\system32\\drivers\\filetrace.sys", b"c:\\windows\\system32\\drivers\\flpydisk.sys", b"c:\\windows\\system32\\drivers\\fltmgr.sys", b"c:\\windows\\system32\\drivers\\fs_rec.sys", b"c:\\windows\\system32\\drivers\\fsdepends.sys", b"c:\\windows\\system32\\drivers\\fvevol.sys", b"c:\\windows\\system32\\drivers\\fwpkclnt.sys", b"c:\\windows\\system32\\drivers\\fxppm.sys", b"c:\\windows\\system32\\drivers\\gagp30kx.sys", b"c:\\windows\\system32\\drivers\\genericusbfn.sys", b"c:\\windows\\system32\\drivers\\gpuenergydrv.sys", b"c:\\windows\\system32\\drivers\\hcw85cir.sys", b"c:\\windows\\system32\\drivers\\hdaudbus.sys", b"c:\\windows\\system32\\drivers\\hdaudio.sys", b"c:\\windows\\system32\\drivers\\hidbatt.sys", b"c:\\windows\\system32\\drivers\\hidbth.sys", b"c:\\windows\\system32\\drivers\\hidclass.sys", b"c:\\windows\\system32\\drivers\\hidi2c.sys", b"c:\\windows\\system32\\drivers\\hidinterrupt.sys", b"c:\\windows\\system32\\drivers\\hidir.sys", b"c:\\windows\\system32\\drivers\\hidparse.sys", b"c:\\windows\\system32\\drivers\\hidusb.sys", b"c:\\windows\\system32\\drivers\\hpsamd.sys", b"c:\\windows\\system32\\drivers\\http.sys", b"c:\\windows\\system32\\drivers\\hvservice.sys", b"c:\\windows\\system32\\drivers\\hvsocket.sys", b"c:\\windows\\system32\\drivers\\hwpolicy.sys", b"c:\\windows\\system32\\drivers\\hyperkbd.sys", b"c:\\windows\\system32\\drivers\\hypervideo.sys", b"c:\\windows\\system32\\drivers\\i8042prt.sys", b"c:\\windows\\system32\\drivers\\iastorv.sys", b"c:\\windows\\system32\\drivers\\iirsp.sys", b"c:\\windows\\system32\\drivers\\indirectkmd.sys", b"c:\\windows\\system32\\drivers\\intelide.sys", b"c:\\windows\\system32\\drivers\\intelpep.sys", b"c:\\windows\\system32\\drivers\\intelppm.sys", b"c:\\windows\\system32\\drivers\\iorate.sys", b"c:\\windows\\system32\\drivers\\ipfltdrv.sys", b"c:\\windows\\system32\\drivers\\ipmidrv.sys", b"c:\\windows\\system32\\drivers\\ipnat.sys", b"c:\\windows\\system32\\drivers\\irda.sys", b"c:\\windows\\system32\\drivers\\irenum.sys", b"c:\\windows\\system32\\drivers\\isapnp.sys", b"c:\\windows\\system32\\drivers\\kbdclass.sys", b"c:\\windows\\system32\\drivers\\kbdhid.sys", b"c:\\windows\\system32\\drivers\\kbldfltr.sys", b"c:\\windows\\system32\\drivers\\kdnic.sys", b"c:\\windows\\system32\\drivers\\ks.sys", b"c:\\windows\\system32\\drivers\\ksecdd.sys", b"c:\\windows\\system32\\drivers\\ksecpkg.sys", b"c:\\windows\\system32\\drivers\\ksthunk.sys", b"c:\\windows\\system32\\drivers\\lltdio.sys", b"c:\\windows\\system32\\drivers\\lsi_fc.sys", b"c:\\windows\\system32\\drivers\\lsi_sas.sys", b"c:\\windows\\system32\\drivers\\lsi_sas2.sys", b"c:\\windows\\system32\\drivers\\lsi_scsi.sys", b"c:\\windows\\system32\\drivers\\luafv.sys", b"c:\\windows\\system32\\drivers\\mausbhost.sys", b"c:\\windows\\system32\\drivers\\mausbip.sys", b"c:\\windows\\system32\\drivers\\mcd.sys", b"c:\\windows\\system32\\drivers\\megasas.sys", b"c:\\windows\\system32\\drivers\\megasr.sys", b"c:\\windows\\system32\\drivers\\microsoft.bluetooth.legacy.leenumerator.sys", b"c:\\windows\\system32\\drivers\\mmcss.sys", b"c:\\windows\\system32\\drivers\\modem.sys", b"c:\\windows\\system32\\drivers\\monitor.sys", b"c:\\windows\\system32\\drivers\\mouclass.sys", b"c:\\windows\\system32\\drivers\\mouhid.sys", b"c:\\windows\\system32\\drivers\\mountmgr.sys", b"c:\\windows\\system32\\drivers\\mpio.sys", b"c:\\windows\\system32\\drivers\\mpsdrv.sys", b"c:\\windows\\system32\\drivers\\mrxdav.sys", b"c:\\windows\\system32\\drivers\\mrxsmb.sys", b"c:\\windows\\system32\\drivers\\mrxsmb10.sys", b"c:\\windows\\system32\\drivers\\mrxsmb20.sys", b"c:\\windows\\system32\\drivers\\msahci.sys", b"c:\\windows\\system32\\drivers\\msdsm.sys", b"c:\\windows\\system32\\drivers\\msfs.sys", b"c:\\windows\\system32\\drivers\\msgpioclx.sys", b"c:\\windows\\system32\\drivers\\msgpiowin32.sys", b"c:\\windows\\system32\\drivers\\mshidkmdf.sys", b"c:\\windows\\system32\\drivers\\mshidumdf.sys", b"c:\\windows\\system32\\drivers\\msisadrv.sys", b"c:\\windows\\system32\\drivers\\msiscsi.sys", b"c:\\windows\\system32\\drivers\\mskssrv.sys", b"c:\\windows\\system32\\drivers\\mslldp.sys", b"c:\\windows\\system32\\drivers\\mspclock.sys", b"c:\\windows\\system32\\drivers\\mspqm.sys", b"c:\\windows\\system32\\drivers\\msrpc.sys", b"c:\\windows\\system32\\drivers\\mssmbios.sys", b"c:\\windows\\system32\\drivers\\mstee.sys", b"c:\\windows\\system32\\drivers\\mtconfig.sys", b"c:\\windows\\system32\\drivers\\mup.sys", b"c:\\windows\\system32\\drivers\\ndis.sys", b"c:\\windows\\system32\\drivers\\ndiscap.sys", b"c:\\windows\\system32\\drivers\\ndisimplatform.sys", b"c:\\windows\\system32\\drivers\\ndistapi.sys", b"c:\\windows\\system32\\drivers\\ndisuio.sys", b"c:\\windows\\system32\\drivers\\ndisvirtualbus.sys", b"c:\\windows\\system32\\drivers\\ndiswan.sys", b"c:\\windows\\system32\\drivers\\ndproxy.sys", b"c:\\windows\\system32\\drivers\\ndu.sys", b"c:\\windows\\system32\\drivers\\netadaptercx.sys", b"c:\\windows\\system32\\drivers\\netbios.sys", b"c:\\windows\\system32\\drivers\\netbt.sys", b"c:\\windows\\system32\\drivers\\netio.sys", b"c:\\windows\\system32\\drivers\\netvsc.sys", b"c:\\windows\\system32\\drivers\\netvsc63.sys", b"c:\\windows\\system32\\drivers\\nfrd960.sys", b"c:\\windows\\system32\\drivers\\nm3.sys", b"c:\\windows\\system32\\drivers\\npfs.sys", b"c:\\windows\\system32\\drivers\\npsvctrig.sys", b"c:\\windows\\system32\\drivers\\nsiproxy.sys", b"c:\\windows\\system32\\drivers\\ntfs.sys", b"c:\\windows\\system32\\drivers\\ntosext.sys", b"c:\\windows\\system32\\drivers\\null.sys", b"c:\\windows\\system32\\drivers\\nv_agp.sys", b"c:\\windows\\system32\\drivers\\nvdimmn.sys", b"c:\\windows\\system32\\drivers\\nvraid.sys", b"c:\\windows\\system32\\drivers\\nvstor.sys", b"c:\\windows\\system32\\drivers\\nwifi.sys", b"c:\\windows\\system32\\drivers\\ohci1394.sys", b"c:\\windows\\system32\\drivers\\pacer.sys", b"c:\\windows\\system32\\drivers\\parport.sys", b"c:\\windows\\system32\\drivers\\partmgr.sys", b"c:\\windows\\system32\\drivers\\pci.sys", b"c:\\windows\\system32\\drivers\\pciide.sys", b"c:\\windows\\system32\\drivers\\pciidex.sys", b"c:\\windows\\system32\\drivers\\pcmcia.sys", b"c:\\windows\\system32\\drivers\\pcw.sys", b"c:\\windows\\system32\\drivers\\pdc.sys", b"c:\\windows\\system32\\drivers\\peauth.sys", b"c:\\windows\\system32\\drivers\\pmem.sys", b"c:\\windows\\system32\\drivers\\pnpmem.sys", b"c:\\windows\\system32\\drivers\\portcls.sys", b"c:\\windows\\system32\\drivers\\processr.sys", b"c:\\windows\\system32\\drivers\\ql2300.sys", b"c:\\windows\\system32\\drivers\\ql40xx.sys", b"c:\\windows\\system32\\drivers\\qwavedrv.sys", b"c:\\windows\\system32\\drivers\\rasacd.sys", b"c:\\windows\\system32\\drivers\\rasl2tp.sys", b"c:\\windows\\system32\\drivers\\raspppoe.sys", b"c:\\windows\\system32\\drivers\\raspptp.sys", b"c:\\windows\\system32\\drivers\\rassstp.sys", b"c:\\windows\\system32\\drivers\\rdbss.sys", b"c:\\windows\\system32\\drivers\\rdpbus.sys", b"c:\\windows\\system32\\drivers\\rdpcdd.sys", b"c:\\windows\\system32\\drivers\\rdpdr.sys", b"c:\\windows\\system32\\drivers\\rdpencdd.sys", b"c:\\windows\\system32\\drivers\\rdprefmp.sys", b"c:\\windows\\system32\\drivers\\rdpvideominiport.sys", b"c:\\windows\\system32\\drivers\\rdpwd.sys", b"c:\\windows\\system32\\drivers\\rdyboost.sys", b"c:\\windows\\system32\\drivers\\refs.sys", b"c:\\windows\\system32\\drivers\\refsv1.sys", b"c:\\windows\\system32\\drivers\\registry.sys", b"c:\\windows\\system32\\drivers\\rfcomm.sys", b"c:\\windows\\system32\\drivers\\rfxvmt.sys", b"c:\\windows\\system32\\drivers\\rmcast.sys", b"c:\\windows\\system32\\drivers\\rndismp.sys", b"c:\\windows\\system32\\drivers\\rootmdm.sys", b"c:\\windows\\system32\\drivers\\rspndr.sys", b"c:\\windows\\system32\\drivers\\sbp2port.sys", b"c:\\windows\\system32\\drivers\\scfilter.sys", b"c:\\windows\\system32\\drivers\\scmbus.sys", b"c:\\windows\\system32\\drivers\\scsiport.sys", b"c:\\windows\\system32\\drivers\\sdbus.sys", b"c:\\windows\\system32\\drivers\\sdport.sys", b"c:\\windows\\system32\\drivers\\sdstor.sys", b"c:\\windows\\system32\\drivers\\secdrv.sys", b"c:\\windows\\system32\\drivers\\sercx.sys", b"c:\\windows\\system32\\drivers\\sercx2.sys", b"c:\\windows\\system32\\drivers\\serenum.sys", b"c:\\windows\\system32\\drivers\\serial.sys", b"c:\\windows\\system32\\drivers\\sermouse.sys", b"c:\\windows\\system32\\drivers\\sffdisk.sys", b"c:\\windows\\system32\\drivers\\sffp_mmc.sys", b"c:\\windows\\system32\\drivers\\sffp_sd.sys", b"c:\\windows\\system32\\drivers\\sfloppy.sys", b"c:\\windows\\system32\\drivers\\sgrmagent.sys", b"c:\\windows\\system32\\drivers\\sisraid2.sys", b"c:\\windows\\system32\\drivers\\sisraid4.sys", b"c:\\windows\\system32\\drivers\\sleepstudyhelper.sys", b"c:\\windows\\system32\\drivers\\smb.sys", b"c:\\windows\\system32\\drivers\\smclib.sys", b"c:\\windows\\system32\\drivers\\spacedump.sys", b"c:\\windows\\system32\\drivers\\spaceport.sys", b"c:\\windows\\system32\\drivers\\spatialgraphfilter.sys", b"c:\\windows\\system32\\drivers\\spbcx.sys", b"c:\\windows\\system32\\drivers\\spldr.sys", b"c:\\windows\\system32\\drivers\\spsys.sys", b"c:\\windows\\system32\\drivers\\srv.sys", b"c:\\windows\\system32\\drivers\\srv2.sys", b"c:\\windows\\system32\\drivers\\srvnet.sys", b"c:\\windows\\system32\\drivers\\stexstor.sys", b"c:\\windows\\system32\\drivers\\storahci.sys", b"c:\\windows\\system32\\drivers\\stornvme.sys", b"c:\\windows\\system32\\drivers\\storport.sys", b"c:\\windows\\system32\\drivers\\storqosflt.sys", b"c:\\windows\\system32\\drivers\\storufs.sys", b"c:\\windows\\system32\\drivers\\storvsc.sys", b"c:\\windows\\system32\\drivers\\storvsp.sys", b"c:\\windows\\system32\\drivers\\stream.sys", b"c:\\windows\\system32\\drivers\\swenum.sys", b"c:\\windows\\system32\\drivers\\synth3dvsc.sys", b"c:\\windows\\system32\\drivers\\tape.sys", b"c:\\windows\\system32\\drivers\\tbs.sys", b"c:\\windows\\system32\\drivers\\tcpip.sys", b"c:\\windows\\system32\\drivers\\tcpipreg.sys", b"c:\\windows\\system32\\drivers\\tdi.sys", b"c:\\windows\\system32\\drivers\\tdpipe.sys", b"c:\\windows\\system32\\drivers\\tdtcp.sys", b"c:\\windows\\system32\\drivers\\tdx.sys", b"c:\\windows\\system32\\drivers\\termdd.sys", b"c:\\windows\\system32\\drivers\\terminpt.sys", b"c:\\windows\\system32\\drivers\\tm.sys", b"c:\\windows\\system32\\drivers\\tpm.sys", b"c:\\windows\\system32\\drivers\\tssecsrv.sys", b"c:\\windows\\system32\\drivers\\tsusbflt.sys", b"c:\\windows\\system32\\drivers\\tsusbgd.sys", b"c:\\windows\\system32\\drivers\\tsusbhub.sys", b"c:\\windows\\system32\\drivers\\tunnel.sys", b"c:\\windows\\system32\\drivers\\uagp35.sys", b"c:\\windows\\system32\\drivers\\uaspstor.sys", b"c:\\windows\\system32\\drivers\\ucmcx.sys", b"c:\\windows\\system32\\drivers\\ucmtcpcicx.sys", b"c:\\windows\\system32\\drivers\\ucmucsi.sys", b"c:\\windows\\system32\\drivers\\ucpd.sys", b"c:\\windows\\system32\\drivers\\ucx01000.sys", b"c:\\windows\\system32\\drivers\\udecx.sys", b"c:\\windows\\system32\\drivers\\udfs.sys", b"c:\\windows\\system32\\drivers\\uefi.sys", b"c:\\windows\\system32\\drivers\\ufx01000.sys", b"c:\\windows\\system32\\drivers\\ufxchipidea.sys", b"c:\\windows\\system32\\drivers\\ufxsynopsys.sys", b"c:\\windows\\system32\\drivers\\uliagpkx.sys", b"c:\\windows\\system32\\drivers\\umbus.sys", b"c:\\windows\\system32\\drivers\\umpass.sys", b"c:\\windows\\system32\\drivers\\urschipidea.sys", b"c:\\windows\\system32\\drivers\\urscx01000.sys", b"c:\\windows\\system32\\drivers\\urssynopsys.sys", b"c:\\windows\\system32\\drivers\\usb8023.sys", b"c:\\windows\\system32\\drivers\\usbcamd2.sys", b"c:\\windows\\system32\\drivers\\usbccgp.sys", b"c:\\windows\\system32\\drivers\\usbcir.sys", b"c:\\windows\\system32\\drivers\\usbd.sys", b"c:\\windows\\system32\\drivers\\usbehci.sys", b"c:\\windows\\system32\\drivers\\usbhub.sys", b"c:\\windows\\system32\\drivers\\usbhub3.sys", b"c:\\windows\\system32\\drivers\\usbohci.sys", b"c:\\windows\\system32\\drivers\\usbport.sys", b"c:\\windows\\system32\\drivers\\usbprint.sys", b"c:\\windows\\system32\\drivers\\usbrpm.sys", b"c:\\windows\\system32\\drivers\\usbser.sys", b"c:\\windows\\system32\\drivers\\usbstor.sys", b"c:\\windows\\system32\\drivers\\usbuhci.sys", b"c:\\windows\\system32\\drivers\\usbvideo.sys", b"c:\\windows\\system32\\drivers\\usbxhci.sys", b"c:\\windows\\system32\\drivers\\vdrvroot.sys", b"c:\\windows\\system32\\drivers\\verifierext.sys", b"c:\\windows\\system32\\drivers\\vga.sys", b"c:\\windows\\system32\\drivers\\vgapnp.sys", b"c:\\windows\\system32\\drivers\\vhdmp.sys", b"c:\\windows\\system32\\drivers\\vhf.sys", b"c:\\windows\\system32\\drivers\\viaide.sys", b"c:\\windows\\system32\\drivers\\vid.sys", b"c:\\windows\\system32\\drivers\\videoprt.sys", b"c:\\windows\\system32\\drivers\\vmbkmcl.sys", b"c:\\windows\\system32\\drivers\\vmbkmclr.sys", b"c:\\windows\\system32\\drivers\\vmbus.sys", b"c:\\windows\\system32\\drivers\\vmbushid.sys", b"c:\\windows\\system32\\drivers\\vmbusr.sys", b"c:\\windows\\system32\\drivers\\vmgencounter.sys", b"c:\\windows\\system32\\drivers\\vmgid.sys", b"c:\\windows\\system32\\drivers\\vms3cap.sys", b"c:\\windows\\system32\\drivers\\vmstorfl.sys", b"c:\\windows\\system32\\drivers\\volmgr.sys", b"c:\\windows\\system32\\drivers\\volmgrx.sys", b"c:\\windows\\system32\\drivers\\volsnap.sys", b"c:\\windows\\system32\\drivers\\volume.sys", b"c:\\windows\\system32\\drivers\\vpci.sys", b"c:\\windows\\system32\\drivers\\vpcivsp.sys", b"c:\\windows\\system32\\drivers\\vsmraid.sys", b"c:\\windows\\system32\\drivers\\vwifibus.sys", b"c:\\windows\\system32\\drivers\\vwififlt.sys", b"c:\\windows\\system32\\drivers\\vwifimp.sys", b"c:\\windows\\system32\\drivers\\wacompen.sys", b"c:\\windows\\system32\\drivers\\wanarp.sys", b"c:\\windows\\system32\\drivers\\watchdog.sys", b"c:\\windows\\system32\\drivers\\wcifs.sys", b"c:\\windows\\system32\\drivers\\wcnfs.sys", b"c:\\windows\\system32\\drivers\\wd.sys", b"c:\\windows\\system32\\drivers\\wdboot.sys", b"c:\\windows\\system32\\drivers\\wdf01000.sys", b"c:\\windows\\system32\\drivers\\wdfcoinstaller01011.dll", b"c:\\windows\\system32\\drivers\\wdfilter.sys", b"c:\\windows\\system32\\drivers\\wdfldr.sys", b"c:\\windows\\system32\\drivers\\wdiwifi.sys", b"c:\\windows\\system32\\drivers\\wdnisdrv.sys", b"c:\\windows\\system32\\drivers\\werkernel.sys", b"c:\\windows\\system32\\drivers\\wfplwf.sys", b"c:\\windows\\system32\\drivers\\wfplwfs.sys", b"c:\\windows\\system32\\drivers\\wimmount.sys", b"c:\\windows\\system32\\drivers\\windowstrustedrt.sys", b"c:\\windows\\system32\\drivers\\windowstrustedrtproxy.sys", b"c:\\windows\\system32\\drivers\\winhv.sys", b"c:\\windows\\system32\\drivers\\winhvr.sys", b"c:\\windows\\system32\\drivers\\winnat.sys", b"c:\\windows\\system32\\drivers\\winusb.sys", b"c:\\windows\\system32\\drivers\\wmiacpi.sys", b"c:\\windows\\system32\\drivers\\wmilib.sys", b"c:\\windows\\system32\\drivers\\wof.sys", b"c:\\windows\\system32\\drivers\\wpcfltr.sys", b"c:\\windows\\system32\\drivers\\wpdupfltr.sys", b"c:\\windows\\system32\\drivers\\wpprecorder.sys", b"c:\\windows\\system32\\drivers\\ws2ifsl.sys", b"c:\\windows\\system32\\drivers\\wudfpf.sys", b"c:\\windows\\system32\\drivers\\wudfrd.sys", b"c:\\windows\\system32\\drivers\\xboxgip.sys", b"c:\\windows\\system32\\drivers\\xinputhid.sys", b"c:\\windows\\system32\\hal.dll", b"c:\\windows\\system32\\ntoskrnl.exe", b"c:\\windows\\system32\\clfs.sys", b"c:\\windows\\system32\\drivers\\wd\\wdfilter.sys", b"c:\\windows\\system32\\drivers\\wd\\wdfilter.sys", b"c:\\windows\\system32\\drivers\\bindflt.sys"]
 
 PXE_analyzed = []
 PPE_analyzed = []
@@ -1034,6 +1036,8 @@ def gdb_setup(ip, port):
     if psLoadedModuleList is None:
         print("[!] Ntoskrnl not found :(")
         return False
+    global Drivers_list
+    Drivers_list = None
     return True
 
 
@@ -2263,7 +2267,6 @@ def find_eprocess_without_system():
                                 if get_va_memory(page+0x1000, 0x1000) is not None:
                                     memory_datas += get_va_memory(page+0x1000, 0x1000)
                                 eprocess_struct = detect_eprocess_struct(memory_datas, mempage, process_name)
-                                print(eprocess_struct)
                                 if eprocess_struct is not None:
                                     return eprocess_struct
             else:
@@ -2634,15 +2637,19 @@ def get_driver_infos_from_flink_address(driver_flink_va):
     return driver
 
 
-def get_drivers_list():
+def get_drivers_list(force=False):
     global Driver_list_Struct
     global Drivers_list_addr
     global Drivers_list
     global modules_eat
     global bitness
 
+    if not force and Drivers_list is not None and len(Drivers_list) > 0:
+        return Drivers_list
+
     cdrivers_list = {}
-    Drivers_list = {}
+    if Drivers_list is None:
+        Drivers_list = {}
 
     if Drivers_list_addr is None or Driver_list_Struct is None:
         if find_driver_list() is None:
@@ -2848,6 +2855,8 @@ def decode_pe(image_base):
     first_page = get_va_memory(image_base, 0x1000)
     if first_page is None:
         return eat
+    if 'PE' in Drivers_list[image_base] and 'EAT' in Drivers_list[image_base]['PE']:
+        return Drivers_list[image_base]['PE']
     dos_header = pe_decode_dos_header(first_page)
     if 'e_lfanew' in dos_header:
         Drivers_list[image_base]['PE'] = {}
@@ -3464,10 +3473,9 @@ def check_all_drivers_IRP_table(driver_to_check=None):
 
 
 def is_in_ms_list(driver_name):
-    global ms_driver_lsit
     if type(driver_name) is str:
         driver_name = bytes(bytearray(driver_name, 'utf8'))
-    for cmsdriver in ms_driver_lsit:
+    for cmsdriver in ms_infos.ms_driver_list:
         if driver_name[1] != bytearray(b':')[0]:
             end_ms_name = cmsdriver.split(b"\\")[-1]
             if end_ms_name == driver_name:
@@ -3628,6 +3636,8 @@ def crawl_list(address, callback_function, ignore_first=False):
     results = []
     flink = address
     while not (flink in addresses) and flink is not None:
+        if not is_kernel_space(flink):
+            return results
         if not (ignore_first and flink == address):
             results.append(callback_function(flink))
         addresses.append(flink)
@@ -3926,6 +3936,10 @@ def is_data_buffer(datas):
         if (is_kernel_space(q0) or ((q0 & 0xffff800000000000) == 0)) and (is_kernel_space(q1) or ((q1 & 0xffff800000000000) == 0)):
             return True
         if (datas[4:].replace(b"\x00", b'') == b'' or (d1 == 0 and is_kernel_space(q1))) and not (datas[0] in [0xeb, 0xe8, 0xe9, 0x90]):
+            return True
+        if w0 == 0 or (q0 >> 44) == 0xfffff:
+            return True
+        if datas.count(b'\xff\xff') == 2 and datas.count(b'\xff\xff\xff') == 0:
             return True
         counter = 0
         for i in range(len(datas)):
@@ -4229,7 +4243,11 @@ def get_pool_tag(address, force=False):
             prev_size = pool_header[0]*pool_tag_size
 
             if force or is_ascii(tag[:3]):
-                return {'tag': tag, 'size': size, 'prev_size': prev_size}
+                tag_str = ''.join(['%c' % a if a < 0x80 else '?' for a in tag])
+                if tag_str in ms_infos.pooltags:
+                    return {'tag': tag, 'size': size, 'prev_size': prev_size, 'tag_infos': ms_infos.pooltags[tag_str]}
+                else:
+                    return {'tag': tag, 'size': size, 'prev_size': prev_size}
     if (address & 0xfff) == 0:
         return get_from_poolbigpagetable(address)
     return None
@@ -4303,6 +4321,173 @@ def crawl_driver_tags(driver_name, start_tag=b""):
             print(hexprint(get_va_memory(sub_addr, cchunk['size']), sub_addr, word_size=8))
 
 
+def check_ObFl_entry(address):
+    global struct_ObFl
+
+    if struct_ObFl is not None and 'self_header' in struct_ObFl:
+        obFl_base = get_qword_from_va(address+struct_ObFl['self_header'])
+        print('    [*] Filter base at 0x%x Altitude %s' % (obFl_base, get_unicode_from_va_no_zero(obFl_base+struct_ObFl['header_uAltitude']).decode()))
+
+    chunk = get_pool_tag(obFl_base)
+    if chunk is None:
+        size = 0x100
+    else:
+        size = chunk['size']
+    offset = 0
+    while offset < size:
+        obj_addr = get_qword_from_va(address+offset)
+        if obj_addr is None:
+            return
+        if is_kernel_space(obj_addr):
+            rights = get_page_rights(obj_addr)
+            if rights is not None and rights['exec']:
+                dvr_name = get_driver_name_from_address(obj_addr)
+                if dvr_name is not None:
+                    dvr_name = get_driver_name(dvr_name)
+                    if not is_in_ms_list(dvr_name):
+                        print("    Callback %x -> %s (not in white list) SUSPICIOUS" % (obj_addr, dvr_name.decode()))
+                    elif debug > 0:
+                        print("    Callback %x : %s" % (obj_addr, dvr_name.decode()))
+                else:
+                    code = get_va_memory(obj_addr, 0x10)
+                    if not is_data_buffer(code):
+                        if code is None:
+                            code = b"???"
+                        else:
+                            code = ' '.join(["%02x" % a for a in bytearray(code)])
+                        print("    Callback %x  SUSPICIOUS ***Unknown*** %s" % (obj_addr, code))
+        offset += 8
+
+
+def check_BaseType_entry(address):
+    global struct_PsProcessType
+    global struct_ObFl
+
+    chunk = get_pool_tag(address+struct_PsProcessType['header'])
+    print('  [*] Checking callbacks for %s at 0x%x' % (get_va_memory(address+struct_PsProcessType['object_Type'], 4).decode(), address+struct_PsProcessType['header']))
+    if chunk is None:
+        return None
+    else:
+        size = chunk['size']
+    offset = 0
+    while offset < size:
+        obj_addr = get_qword_from_va(address+offset)
+        if obj_addr is None:
+            return
+        if is_kernel_space(obj_addr):
+            rights = get_page_rights(obj_addr)
+            if rights is not None and rights['exec']:
+                dvr_name = get_driver_name_from_address(obj_addr)
+                if dvr_name is not None:
+                    dvr_name = get_driver_name(dvr_name)
+                    if not is_in_ms_list(dvr_name):
+                        print("    Callback %x -> %s (not in white list) SUSPICIOUS" % (obj_addr, dvr_name.decode()))
+                    elif debug > 0:
+                        print("    Callback %x : %s" % (obj_addr, dvr_name.decode()))
+                else:
+                    code = get_va_memory(obj_addr, 0x10)
+                    if not is_data_buffer(code):
+                        if code is None:
+                            code = b"???"
+                        else:
+                            code = ' '.join(["%02x" % a for a in bytearray(code)])
+                        print("    Callback %x  SUSPICIOUS ***Unknown*** %s" % (obj_addr, code))
+        offset += 8
+
+    if 'object_filters' in struct_PsProcessType:
+        filters = get_qword_from_va(address+struct_PsProcessType['object_filters'])
+        if is_kernel_space(filters) and filters != (address+struct_PsProcessType['object_filters']):
+            crawl_list(address+struct_PsProcessType['object_filters'], check_ObFl_entry, True)
+
+
+def crawl_BaseType_entry(address):
+    global struct_PsProcessType
+
+    header_addr = address+(struct_PsProcessType['header']-struct_PsProcessType['list_base_types'])
+
+    chunk = get_pool_tag(header_addr)
+    if chunk is None:
+        return None
+    check_BaseType_entry(header_addr-struct_PsProcessType['header'])
+
+
+def check_KernelTypes():
+    global struct_PsProcessType
+    global struct_ObFl
+
+    PsProcessType_addr = resolve_symbol("nt!PsProcessType")
+    if PsProcessType_addr is None or PsProcessType_addr == 0:
+        print("[!] PsProcessType not found in ntoskrnl :(")
+        return
+
+    if struct_PsProcessType is None:
+        decode_PsProcessType(PsProcessType_addr)
+
+    if struct_PsProcessType is not None and 'list_base_types' in struct_PsProcessType and 'object_Type' in struct_PsProcessType:
+        print("[*] Checking kernel types")
+        first_entry = get_qword_from_va(PsProcessType_addr)
+        crawl_list(first_entry+struct_PsProcessType['list_base_types'], crawl_BaseType_entry, False)
+    else:
+        print("[!] decoding of PsProcessType failed :(")
+
+
+def decode_PsProcessType(base_addr):
+    global struct_PsProcessType
+    global struct_ObFl
+
+    struct_PsProcessType = {'list_duno': 0}  # from LIST_ENTRY
+
+    first_PsProcessType = get_qword_from_va(base_addr)
+    if first_PsProcessType is None or first_PsProcessType == 0:
+        print("[!] PsProcessType is not allocated")
+        return
+
+    addr = find_pool_chunck(first_PsProcessType)
+    if addr is None:
+        print("[!] PsProcessType is not a pool allocation")
+        return
+    pool_chunk = get_pool_tag(addr)
+    align_offset = addr-first_PsProcessType
+    struct_PsProcessType['header'] = align_offset
+    first_PsProcessType_dump = get_va_memory(addr, pool_chunk['size'])
+    if first_PsProcessType_dump is None:
+        print("[!] First PsProcessType is not allocated")
+        return
+
+    sdump = struct.unpack('Q'*(len(first_PsProcessType_dump) >> 3), first_PsProcessType_dump)
+    sub_addr_index = 0
+    while sub_addr_index < len(sdump):
+        sub_addr = sdump[sub_addr_index]
+        if sub_addr != (addr+(sub_addr_index << 3)) and sub_addr != (addr+(sub_addr_index << 3)-8) and is_list_entry(sub_addr):
+            addr_next = find_pool_chunck(sub_addr)
+            pool_chunk = get_pool_tag(addr_next)
+            if pool_chunk is not None:
+                if pool_chunk['tag'].startswith(b'Obj') and 'list_base_types' not in struct_PsProcessType:
+                    struct_PsProcessType['list_base_types'] = (sub_addr_index << 3)+align_offset
+                elif pool_chunk['tag'] == b'ObFl' and 'object_filters' not in struct_PsProcessType:
+                    struct_PsProcessType['object_filters'] = (sub_addr_index << 3)+align_offset
+        if 'object_Type' not in struct_PsProcessType:
+            if first_PsProcessType_dump[sub_addr_index << 3:(sub_addr_index << 3)+4] == b'Proc':
+                struct_PsProcessType['object_Type'] = (sub_addr_index << 3)+align_offset
+            elif first_PsProcessType_dump[(sub_addr_index << 3)+4:(sub_addr_index << 3)+8] == b'Proc':
+                struct_PsProcessType['object_Type'] = (sub_addr_index << 3)+4+align_offset
+        sub_addr_index += 1
+
+    if 'object_filters' in struct_PsProcessType and struct_ObFl is None:
+        struct_ObFl = {'header_uAltitude': 0x10}
+        obFlt_entry_addr = get_qword_from_va(first_PsProcessType+struct_PsProcessType['object_filters'])
+
+        obFlt_dump = get_va_memory(obFlt_entry_addr, 0x50)
+        sdump = struct.unpack('Q'*(len(obFlt_dump) >> 3), obFlt_dump)
+        sub_addr_index = 0
+        while sub_addr_index < len(sdump):
+            sub_addr = sdump[sub_addr_index]
+            pool_chunk = get_pool_tag(sub_addr)
+            if pool_chunk is not None and 'self_header' not in struct_ObFl and pool_chunk['tag'] == b'ObFl':
+                struct_ObFl['self_header'] = sub_addr_index << 3
+            sub_addr_index += 1
+
+
 def check_fltmgr():
     dump = get_driver_section("fltmgr", b".data")
     if dump is None:
@@ -4325,10 +4510,14 @@ def crawl_fltmgr_frame(address):
         decode_struct_FltmgrFrame(address)
     if struct_FltmgrFrame is None:
         return False
-    frame_name = get_unicode_from_va_no_zero(struct_FltmgrFrame['first_frame']+struct_FltmgrFrame['frame_name'])
-    if frame_name is None:
+    frame_AltitudeIntervalLow = get_unicode_from_va_no_zero(struct_FltmgrFrame['first_frame']+struct_FltmgrFrame['frame_AltitudeIntervalLow'])
+    frame_AltitudeIntervalHigh = get_unicode_from_va_no_zero(struct_FltmgrFrame['first_frame']+struct_FltmgrFrame['frame_AltitudeIntervalHigh'])
+    if frame_AltitudeIntervalLow is None:
         print("  [!] Failed to get Frame name")
-    print("Frame : %s" % (frame_name.decode()))
+    if debug > 0:
+        print("FrameId : %d at 0x%x (Altitude %s)" % (get_dword_from_va(address+struct_FltmgrFrame['FrameId']), address, frame_AltitudeIntervalHigh.decode()))
+    else:
+        print("FrameId : %d (Altitude %s)" % (get_dword_from_va(address+struct_FltmgrFrame['FrameId']), frame_AltitudeIntervalHigh.decode()))
     crawl_list(struct_FltmgrFrame['first_frame']+struct_FltmgrFrame['list_drivers'], check_fltmgr_entry, True)
     return True
 
@@ -4336,9 +4525,14 @@ def crawl_fltmgr_frame(address):
 def check_fltmgr_entry(address):
     global struct_FltmgrFltFilter
     dvr_name = get_unicode_from_va_no_zero(address+struct_FltmgrFltFilter['driver_name'])
+    flt_altitude = get_unicode_from_va_no_zero(address+struct_FltmgrFltFilter['filter_DefaultAltitude'])
+    if debug > 0:
+        print("  FLT_FILTER address : 0x%x" % (address))
     if dvr_name is not None:
-        print("  Driver name : %s" % (dvr_name.decode()))
-    offset = struct_FltmgrFltFilter['filter_ref']
+        print("  Driver name : %s (Altitude %s)" % (dvr_name.decode(), flt_altitude.decode()))
+    else:
+        print('  No Driver name for filter at 0x%x (Altitude %s)' % (address, flt_altitude.decode()))
+    offset = struct_FltmgrFltFilter['filter_DefaultAltitude']+0x10
     chunk = get_pool_tag(address+struct_FltmgrFltFilter['header'])
     if chunk is None:
         size = 0x100
@@ -4398,15 +4592,19 @@ def find_pool_header_up(address, size=0x80, tag=None):
 
 def find_pool_chunck(addr):
     offset = 0
+    first_pool_chunk = None
     while get_va_memory(addr-offset, 8) and offset < 0x2000:
         pool_chunk = get_pool_tag(addr-offset)
         if pool_chunk is not None:
+            if first_pool_chunk is None and pool_chunk['size'] > offset:
+                first_pool_chunk = (addr-offset)
             next_pool = get_pool_tag((addr-offset)+pool_chunk['size']+0x10)
             if next_pool is not None and next_pool['prev_size'] == (pool_chunk['size']+0x10) and addr < ((addr-offset)+pool_chunk['size']+0x10):
                 return (addr-offset)
             if pool_chunk['size'] > 0 and pool_chunk['size'] < 0x2000 and 'prev_size' in pool_chunk and pool_chunk['prev_size'] == 0 and addr < ((addr-offset)+pool_chunk['size']+0x10):
                 return (addr-offset)
         offset += 8
+    return first_pool_chunk
 
 
 def find_unicode_string(address, size):
@@ -4442,13 +4640,13 @@ def decode_struct_FltmgrFrame(address):
     result = {}
     chunk = get_pool_tag(address)
 
-    frame_ref = b""
+    frame_AltitudeIntervalHigh = b""
 
     datas = get_va_memory(address, 0x200)
 
     offset = 0
     while offset < len(datas):
-        if offset > 0x40 and not ('frame_name' in result):
+        if offset > 0x40 and not ('frame_AltitudeIntervalLow' in result):
             break
         qword_1 = struct.unpack('Q', datas[offset:offset+8])[0]
         if (offset+8) < len(datas):
@@ -4456,23 +4654,24 @@ def decode_struct_FltmgrFrame(address):
         else:
             qword_2 = None
 
-        if not ('frame_name' in result) and (qword_1 >> 32) == 0 and (qword_1 > 0):
+        if not ('frame_AltitudeIntervalLow' in result) and (qword_1 >> 32) == 0 and (qword_1 > 0):
             if qword_2 is not None and (qword_2 >> 48) == 0xffff and (qword_1 > 0):
                 uni_str = get_unicode_from_va_no_zero(address+offset)
                 if uni_str is not None and len(uni_str) < 0x80:
                     if uni_str == b"0":  # Found the frame name !
-                        result['frame_name'] = offset
-                    frame_ref = get_unicode_from_va_no_zero(address+offset+0x10)
-                    if frame_ref is not None and len(frame_ref) < 0x18:
-                        result['frame_ref'] = offset+0x10
+                        result['frame_AltitudeIntervalLow'] = offset
+                    frame_AltitudeIntervalHigh = get_unicode_from_va_no_zero(address+offset+0x10)
+                    if frame_AltitudeIntervalHigh is not None and len(frame_AltitudeIntervalHigh) < 0x18:
+                        result['frame_AltitudeIntervalHigh'] = offset+0x10
         if is_list_entry(qword_1):
             uni_str_offset = find_unicode_string(qword_1, 0x40)
             if uni_str_offset is not None:
                 uni_str = get_unicode_from_va_no_zero(qword_1+uni_str_offset)
                 if uni_str is not None and len(uni_str) < 0x100:
                     uni_str_2 = get_unicode_from_va_no_zero(qword_1+uni_str_offset+0x10)
-                    if frame_ref is not None and uni_str_2 is not None and len(uni_str_2) > 4 and len(frame_ref) > 4 and is_int_str(uni_str_2) and is_int_str(frame_ref):
+                    if frame_AltitudeIntervalHigh is not None and uni_str_2 is not None and len(uni_str_2) > 4 and len(frame_AltitudeIntervalHigh) > 4 and is_int_str(uni_str_2) and is_int_str(frame_AltitudeIntervalHigh):
                         result['first_frame'] = address
+                        result['FrameId'] = 0x10
                         result['list_drivers'] = offset
                         chunk = find_pool_header_up(qword_1, 0x60)
                         if chunk is not None and chunk['tag'] == b'FMfl':
@@ -4480,7 +4679,7 @@ def decode_struct_FltmgrFrame(address):
                             struct_FltmgrFltFilter['header'] = chunk['address']-qword_1
                             struct_FltmgrFltFilter['list_entry'] = 0
                             decode_struct_FltmgrFltFilter(qword_1, chunk['size']+struct_FltmgrFltFilter['header'])
-                            if 'filter_ref' in struct_FltmgrFltFilter:
+                            if 'filter_DefaultAltitude' in struct_FltmgrFltFilter:
                                 struct_FltmgrFrame = result
                                 return
                         return
@@ -4502,7 +4701,7 @@ def decode_struct_FltmgrFltFilter(address, size):
         if obj_addr is None:
             return
         struct_FltmgrFltFilter['driver_name'] = uni_str_offset
-        struct_FltmgrFltFilter['filter_ref'] = uni_str_offset_ref
+        struct_FltmgrFltFilter['filter_DefaultAltitude'] = uni_str_offset_ref
         offset += 8
 
 
@@ -4833,8 +5032,6 @@ def get_exec_section_from_pe(image_base):
         return None
 
     decode_pe(image_base)
-
-    print(Drivers_list[image_base])
 
 
 def is_block_of_address(raw, mem):
@@ -6458,6 +6655,7 @@ help_str += "  cci : check g_CiOptions state and CI DSE callbacks\n"
 help_str += "  ccb : check Callback directory\n"
 help_str += "  cndis : check NDIS callbacks\n"
 help_str += "  cnetio : check FwpkCLNT/NetIo callbacks\n"
+help_str += "  cktypes : check kernel types callbacks\n"
 help_str += "  cfltmgr : check FltMgr callbacks\n"
 help_str += "  ctimer : check DPC timers\n"
 help_str += "  cidt : check IDT entries\n"
@@ -6468,6 +6666,8 @@ help_str += "  winobj [\\Device] : list objects\n"
 help_str += "  list start end : display memory\n"
 help_str += "  lm : list modules\n"
 help_str += "  dump addr length: display memory\n"
+help_str += "  !addr addr: get infos on the address\n"
+help_str += "  dqs addr [length]: display memory with informations\n"
 help_str += "  d[bdq] addr [length]: display memory\n"
 help_str += "  !d[bdq] addr [length]: display physical memory\n"
 help_str += "  fpool ADDR : Find pool chunck of address\n"
@@ -6510,7 +6710,7 @@ while True:
         gdb_connect()
     try:
         commands = ";"+commands+";"
-        commands = commands.replace(';all;', ';print Check : cidt;cidt;print Check : cirp;cirp;print Check : cdev;cdev;print Check : ccb;ccb;print Check : cio;cio;print Check : cndis;cndis;print Check : cnetio;cnetio;print Check : cfltmgr;cfltmgr;print Check : ctimer;ctimer;print Check : fpg;fpg;print Check : ci;ci;print Check : cci;cci;print Check : pe;pe;')
+        commands = commands.replace(';all;', ';print Check : cidt;cidt;print Check : cirp;cirp;print Check : cdev;cdev;print Check : ccb;ccb;print Check : cktypes;cktypes;print Check : cio;cio;print Check : cndis;cndis;print Check : cnetio;cnetio;print Check : cfltmgr;cfltmgr;print Check : ctimer;ctimer;print Check : fpg;fpg;print Check : ci;ci;print Check : cci;cci;print Check : pe;pe;')
         commands = commands.split(";")
         while '' in commands:
             commands.remove('')
@@ -6569,6 +6769,55 @@ while True:
                         writeFile("%016X_%016X_%X.mem" % (cr3, addr, length), datas)
                 else:
                     print("You must set an address")
+            elif args[0] == "dqs":
+                if len(args) > 2:
+                    size = int(args[2], 16)
+                else:
+                    size = 0x40
+                if len(args) > 1:
+                    base_addr = resolve_symbol(args[1])
+                    offset = 0
+                    while offset < size:
+                        addr = get_qword_from_va(base_addr+offset)
+                        drv = get_driver_name_from_address(addr)
+                        comment = []
+                        if drv is not None:
+                            for image_base in Drivers_list:
+                                if Drivers_list[image_base]["Name"] == drv:
+                                    comment = ["%s+%x" % ('.'.join(drv.decode().split("\\")[-1].split('.')[:-1]), addr-image_base)]
+                                    if 'PE' not in Drivers_list[image_base]:
+                                        decode_pe(image_base)
+                                    if 'PE' in Drivers_list[image_base] and 'Sections' in Drivers_list[image_base]['PE']:
+                                        for csection in Drivers_list[image_base]['PE']['Sections']:
+                                            if (image_base+csection['virtual_address']) <= addr < (image_base+csection['virtual_address']+csection['virtual_size']):
+                                                comment = ["%s+%s+%x" % ('.'.join(drv.decode().split("\\")[-1].split('.')[:-1]), csection['name'].decode(), addr-(image_base+csection['virtual_address']))]
+                                    if 'PE' in Drivers_list[image_base] and 'EAT' in Drivers_list[image_base]['PE']:
+                                        near_eat = {'function': None, 'diff': 99999999999}
+                                        for ceat_function in Drivers_list[image_base]['PE']['EAT']:
+                                            ceat_func_addr = Drivers_list[image_base]['PE']['EAT'][ceat_function]
+                                            if (addr-ceat_func_addr) >= 0 and near_eat['diff'] > (addr-ceat_func_addr):
+                                                near_eat['diff'] = (addr-ceat_func_addr)
+                                                near_eat['function'] = ceat_function
+                                        if near_eat['function'] is not None:
+                                            comment = ["%s+%s+%x" % ('.'.join(drv.decode().split("\\")[-1].split('.')[:-1]), near_eat['function'].decode(), near_eat['diff'])]
+                        elif addr != (base_addr+offset) and addr != (base_addr+offset-8):  # prevent self LIST_ENTRY
+                            chunck_addr = find_pool_chunck(addr)
+                            if chunck_addr is not None and get_pool_tag(chunck_addr) is not None:
+                                pool_chunk = get_pool_tag(chunck_addr)
+                                if addr == chunck_addr:
+                                    comment.append("Pool top Tag '%s'" % (''.join(['%c' % a if a < 0x80 else '?' for a in pool_chunk['tag']])))
+                                else:
+                                    comment.append("Pool start at -0x%x Tag '%s'" % (addr-chunck_addr, ''.join(['%c' % a if a < 0x80 else '?' for a in pool_chunk['tag']])))
+                        if is_list_entry(addr):
+                            if addr != (base_addr+offset) and addr != (base_addr+offset-8):
+                                comment.append("LIST_ENTRY")
+                            else:
+                                comment.append("Self LIST_ENTRY")
+                        if len(comment) > 0:
+                            print("%x : %016x // %s" % (base_addr+offset, addr, ' ; '.join(comment)))
+                        else:
+                            print("%x : %016x" % (base_addr+offset, addr))
+                        offset += 8
             elif args[0] == "!address" or args[0] == "!addr":
                 if len(args) > 1:
                     addr = resolve_symbol(args[1])
@@ -6578,12 +6827,29 @@ while True:
                             if Drivers_list[image_base]["Name"] == drv:
                                 print("%x in %s" % (addr, drv.decode()))
                                 print("%s+%x" % ('.'.join(drv.decode().split("\\")[-1].split('.')[:-1]), addr-image_base))
+                                if 'PE' not in Drivers_list[image_base]:
+                                    decode_pe(image_base)
+                                if 'PE' in Drivers_list[image_base] and 'Sections' in Drivers_list[image_base]['PE']:
+                                    for csection in Drivers_list[image_base]['PE']['Sections']:
+                                        if (image_base+csection['virtual_address']) <= addr < (image_base+csection['virtual_address']+csection['virtual_size']):
+                                            print("%s %s+%x" % ('.'.join(drv.decode().split("\\")[-1].split('.')[:-1]), csection['name'].decode(), addr-(image_base+csection['virtual_address'])))
+                                if 'PE' in Drivers_list[image_base] and 'EAT' in Drivers_list[image_base]['PE']:
+                                    near_eat = {'function': None, 'diff': 99999999999}
+                                    for ceat_function in Drivers_list[image_base]['PE']['EAT']:
+                                        ceat_func_addr = Drivers_list[image_base]['PE']['EAT'][ceat_function]
+                                        if (addr-ceat_func_addr) >= 0 and near_eat['diff'] > (addr-ceat_func_addr):
+                                            near_eat['diff'] = (addr-ceat_func_addr)
+                                            near_eat['function'] = ceat_function
+                                    if near_eat['function'] is not None:
+                                        print("%s %s+%x" % ('.'.join(drv.decode().split("\\")[-1].split('.')[:-1]), near_eat['function'].decode(), near_eat['diff']))
                     else:
                         chunck_addr = find_pool_chunck(addr)
                         if chunck_addr is not None and get_pool_tag(chunck_addr) is not None:
                             pool_chunk = get_pool_tag(chunck_addr)
                             print("Pool        : %x" % (chunck_addr))
-                            print("  Tag       : %s" % (pool_chunk['tag'].decode(errors='replace')))
+                            if 'tag_infos' in pool_chunk:
+                                print("  Tag infos : %s" % (pool_chunk['tag_infos']))
+                            print("  Tag       : %s" % (''.join(['%c' % a if a < 0x80 else '?' for a in pool_chunk['tag']])))
                             print("  Size      : %x" % (pool_chunk['size']))
                             print("  Prev Size : %x" % (pool_chunk['prev_size']))
                         else:
@@ -6593,6 +6859,8 @@ while True:
                     addr = resolve_symbol(args[1])
                     pool_chunk = get_pool_tag(addr)
                     if pool_chunk is not None:
+                        if 'tag_infos' in pool_chunk:
+                            print("  Tag infos : %s" % (pool_chunk['tag_infos']))
                         print("  Tag       : %s" % (pool_chunk['tag'].decode(errors='replace')))
                         print("  Size      : %x" % (pool_chunk['size']))
                         print("  Prev Size : %x" % (pool_chunk['prev_size']))
@@ -6607,7 +6875,9 @@ while True:
                         pool_chunk = get_pool_tag(addr)
                         if pool_chunk is not None:
                             print("Pool        : %x" % (addr))
-                            print("  Tag       : %s" % (pool_chunk['tag'].decode(errors='replace')))
+                            if 'tag_infos' in pool_chunk:
+                                print("  Tag infos : %s" % (pool_chunk['tag_infos']))
+                            print("  Tag       : %s" % (''.join(['%c' % a if a < 0x80 else '?' for a in pool_chunk['tag']])))
                             print("  Size      : %x" % (pool_chunk['size']))
                             print("  Prev Size : %x" % (pool_chunk['prev_size']))
                         else:
@@ -6697,6 +6967,8 @@ while True:
                     check_critical_drivers()
             elif args[0] == "cfltmgr":
                 check_fltmgr()
+            elif args[0] == "cktypes":
+                check_KernelTypes()
             elif args[0] == "cnetio":
                 check_netio()
             elif args[0] == "cndis":
@@ -6874,7 +7146,6 @@ while True:
                 if len(args) > 1:
                     pid_to_use = int(args[1], 0)
                     if pid_to_use in EPROCESS_List:
-                        print(EPROCESS_List[pid_to_use])
                         cr3 = EPROCESS_List[pid_to_use]['CR3'] & 0xfffffffffffff000
                     else:
                         print("PID not found")
