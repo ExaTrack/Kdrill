@@ -57,6 +57,12 @@ seValidateImageHeader_callback = None
 seValidateImageData_callback = None
 seValidateImageHeader_callback_addr = None
 seValidateImageData_callback_addr = None
+addr_IopNotifyLastChanceShutdownQueueHead = None
+addr_IopNotifyShutdownQueueHead = None
+addr_PspLoadImageNotifyRoutine = None
+addr_PspCreateProcessNotifyRoutine = None
+addr_PspCreateThreadNotifyRoutine = None
+addr_CallbackListHead = None
 
 
 phys_to_file = []
@@ -65,6 +71,7 @@ sdmp_map = {}
 
 hdOffset = 0
 
+cm_Callback_struct = {}
 ndisCbIo_struct = {}
 ndisCbIo_struct['NDfv_ptr'] = {}
 ndisCbIo_struct['NDpb_ptr'] = {}
@@ -399,7 +406,7 @@ def download_from_ms(driver_name=None, image_base=None):
     try:
         import urllib2
         openurl = urllib2.urlopen
-    except:
+    except Exception:
         import urllib
         import urllib.request
         openurl = urllib.request.urlopen
@@ -459,19 +466,19 @@ def download_from_ms(driver_name=None, image_base=None):
             try:
                 response = openurl(dl_link)
                 datas = response.read()
-            except:
+            except Exception:
                 return
         try:
             os.stat("c:\\symbols")
-        except:
+        except Exception:
             os.mkdir("c:\\symbols")
         try:
             os.stat("c:\\symbols\\%s" % end_name)
-        except:
+        except Exception:
             os.mkdir("c:\\symbols\\%s" % end_name)
         try:
             os.stat("c:\\symbols\\%s\\%s" % (end_name, identifier))
-        except:
+        except Exception:
             os.mkdir("c:\\symbols\\%s\\%s" % (end_name, identifier))
         open("c:\\symbols\\%s\\%s\\%s" % (end_name, identifier, end_name), "wb").write(datas)
         image_base_to_file[image_base] = path_file
@@ -491,7 +498,7 @@ def check_dump(dump):
 def get_NtBuildNumber():
     try:
         import _winreg
-    except:
+    except Exception:
         import winreg as _winreg
     reg_path = "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion"
     try:
@@ -499,7 +506,7 @@ def get_NtBuildNumber():
         registry_key = _winreg.OpenKey(_winreg.HKEY_LOCAL_MACHINE, reg_path, 0, _winreg.KEY_READ)
         build_number = _winreg.QueryValueEx(registry_key, 'CurrentBuild')
         return int(build_number[0])
-    except:
+    except Exception:
         print("Error, can't get build number :-(")
         return None
 
@@ -507,7 +514,7 @@ def get_NtBuildNumber():
 def get_RAM_mapping():
     try:
         import _winreg
-    except:
+    except Exception:
         import winreg as _winreg
     global phys_to_file
     global end_of_physmem
@@ -533,7 +540,7 @@ def get_RAM_mapping():
             offset += 0x14
 
         return map
-    except:
+    except Exception:
         print("Error, can't get build number :-(")
         return None
 
@@ -607,7 +614,7 @@ def decode_executable_from_file(path):
 def unload_driver():
     try:
         import _winreg
-    except:
+    except Exception:
         import winreg as _winreg
     global dev_handle
     get_se_rights("SeLoadDriverPrivilege")
@@ -653,7 +660,7 @@ def unload_driver():
 def load_driver():
     try:
         import _winreg
-    except:
+    except Exception:
         import winreg as _winreg
     global debug
     global dev_handle
@@ -1460,8 +1467,8 @@ def get_from_PTE(PTE_entry, va_address):
     ptr_page_table_i = (page_table_i & 0x0000FFFFFFFFF000)
     if debug > 1:
         print("      PTE [0x%x] : 0x%016X (0x%016X)" % (index, page_table_i, (va_address & 0xfffffffffffff000)))
-    if debug > 1 and ((page_table_i & 0xC01) == 0) and ((page_table_i & 0x1E) != 0):
-        print("      Pagefile number: 0x%x, offset: 0x%x" % ((page_table_i & 0x1E) >> 1, (page_table_i & 0xfffff000) >> 12))
+    if debug > 1 and ((page_table_i & 0x3001) == 0x2000):
+        print("      Pagefile number: va: 0x%x, offset: 0x%x" % (va_address, (page_table_i >> 32)))
     if (page_table_i & 0x863):  # soft bits for Prototype or Transition
         if ptr_page_table_i in cache_pages:
             datas = cache_pages[ptr_page_table_i]
@@ -1732,7 +1739,7 @@ def get_va_memory(va_address, length):
                 all_pages += get_from_PXE(cpage)
             else:
                 all_pages += get_from_PPE(cr3, cpage)
-        except:
+        except Exception:
             if debug > 1:
                 print("  [!] Exception when reading pages !")
             return None
@@ -1829,7 +1836,7 @@ def WindowsTime(low, high):
     try:
         dt = datetime.datetime.utcfromtimestamp(unixtime)
         return str(dt)
-    except:
+    except Exception:
         return None
 
 
@@ -2097,7 +2104,7 @@ def find_crawl_vacb():
                 sub_addr_next = struct.unpack("Q"*0x20, sub_dump).index(0)
                 if sub_addr_next <= 0:
                     continue
-            except:
+            except Exception:
                 continue
             sub_dump = get_va_memory(sub_addr, (sub_addr_next*8) + 8)
             if sub_dump is None or len(sub_dump) != ((sub_addr_next*8) + 8):
@@ -2343,7 +2350,7 @@ def get_eprocess_process_list():
             EPROCESS_List_addr[curr_process['Pid']] = flink
             try:
                 time_str = WindowsTime(curr_process['CreateTime'] & 0xffffffff, curr_process['CreateTime'] >> 32)
-            except:
+            except Exception:
                 time_str = "???"
             if 'PEB' in EPROCESS_Struct:
                 print("%6d %6d %16s 0x%016x 0x%016x %x %s" % (curr_process['Pid'], curr_process['PPid'], curr_process['Name'].decode(errors='ignore'), curr_process['PEB'], curr_process['CR3'], flink, time_str))
@@ -2908,7 +2915,7 @@ def is_integer(str_to_check):
     try:
         int(str_to_check, 16)
         return True
-    except:
+    except Exception:
         return False
 
 
@@ -2941,7 +2948,7 @@ def resolve_symbol(str_to_resolve):
     if str_to_resolve.startswith("0x"):
         try:
             return int(str_to_resolve, 16)
-        except:
+        except Exception:
             pass
     if str_to_resolve.startswith("poi("):
         res_val = resolve_symbol(str_to_resolve[4:str_to_resolve.rfind(')')])
@@ -3129,7 +3136,7 @@ def decode_file_object(address):
     global file_object_struct
     if file_object_struct is not None:
         return file_object_struct
-    result = {'Type': 0, 'Size': 0x2, 'DeviceObject': 0x8, 'Vpb': 0x10, 'FsContext': 0x18, 'SectionObjectPointer': 0x28}
+    result = {'Type': 0, 'Size': 0x2, 'DeviceObject': 0x8, 'Vpb': 0x10, 'FsContext': 0x18, 'FsContext2': 0x20, 'SectionObjectPointer': 0x28}
 
     fileType = get_word_from_va(address)
     fileSize = get_word_from_va(address+2)
@@ -3160,6 +3167,7 @@ def get_file_object(address):
     result['DeviceObject'] = get_qword_from_va(address+file_object_struct['DeviceObject'])
     result['Vpb'] = get_qword_from_va(address+file_object_struct['Vpb'])
     result['FsContext'] = get_qword_from_va(address+file_object_struct['FsContext'])
+    result['FsContext2'] = get_qword_from_va(address+file_object_struct['FsContext2'])
     result['SectionObjectPointer'] = get_qword_from_va(address+file_object_struct['SectionObjectPointer'])
     result['FileName'] = get_unicode_from_va(address+file_object_struct['FileName'], True)
     if result['FileName'] is None:
@@ -3373,25 +3381,27 @@ def get_driver_object_struct(address):
 def decode_driver_object(address):
     global driver_object_struct
     global bitness
-    if driver_object_struct is None:
-        get_driver_object_struct(address)
     result = {}
-    size = get_word_from_va(address+driver_object_struct['Size'])
+    size = get_word_from_va(address+2)
     if size is None or size == 0:
         return None
     datas = get_va_memory(address, size)
     if datas is None:
         return None
-    uni = get_unicode_from_va_no_zero(address+driver_object_struct['DriverName'])
+    uni = get_unicode_from_va_no_zero(address+0x38)
     if uni is not None:
         result['DriverName'] = uni
     if bitness == 64:
-        result['IRP_MJ'] = struct.unpack('Q'*28, datas[driver_object_struct['IRP_MJ_entry']:driver_object_struct['IRP_MJ_entry']+(28*8)])
-        result['Driver'] = struct.unpack('Q', datas[driver_object_struct['Driver']:driver_object_struct['Driver']+8])[0]
-        result['DeviceObject'] = struct.unpack('Q', datas[driver_object_struct['DeviceObject']:driver_object_struct['DeviceObject']+8])[0]
-        result['DriverUnload'] = struct.unpack('Q', datas[driver_object_struct['DriverUnload']:driver_object_struct['DriverUnload']+8])[0]
-        result['DriverStartIo'] = struct.unpack('Q', datas[driver_object_struct['DriverStartIo']:driver_object_struct['DriverStartIo']+8])[0]
-        result['DriverInit'] = struct.unpack('Q', datas[driver_object_struct['DriverInit']:driver_object_struct['DriverInit']+8])[0]
+        result['Type'] = struct.unpack('H', datas[:2])[0]
+        result['DeviceObject'] = struct.unpack('Q', datas[8:0x10])[0]
+        result['Driver'] = struct.unpack('Q', datas[0x18:0x20])[0]
+        result['DriverSize'] = struct.unpack('Q', datas[0x20:0x28])[0]
+        result['DriverSection'] = struct.unpack('Q', datas[0x28:0x30])[0]
+        result['DriverExtension'] = struct.unpack('Q', datas[0x30:0x38])[0]
+        result['DriverInit'] = struct.unpack('Q', datas[0x58:0x60])[0]
+        result['DriverStartIo'] = struct.unpack('Q', datas[0x60:0x68])[0]
+        result['DriverUnload'] = struct.unpack('Q', datas[0x68:0x70])[0]
+        result['IRP_MJ'] = struct.unpack('Q'*28, datas[0x70:0x70+(28*8)])
     else:
         result['IRP_MJ'] = struct.unpack('I'*28, datas[driver_object_struct['IRP_MJ_entry']:driver_object_struct['IRP_MJ_entry']+(28*4)])
         result['Driver'] = struct.unpack('I', datas[driver_object_struct['Driver']:driver_object_struct['Driver']+4])[0]
@@ -3402,10 +3412,37 @@ def decode_driver_object(address):
     return result
 
 
+def decode_vpb(address):
+    global bitness
+    result = {}
+    datas = get_va_memory(address, 0x40)
+    if datas is None:
+        return None
+    if bitness == 64:
+        result['Type'] = struct.unpack('H', datas[:2])[0]
+        result['Size'] = struct.unpack('H', datas[2:4])[0]
+        result['Flags'] = struct.unpack('H', datas[4:6])[0]
+        result['VolumeLabelLength'] = struct.unpack('H', datas[6:8])[0]
+        result['DeviceObject'] = struct.unpack('Q', datas[0x8:0x10])[0]
+        result['RealDevice'] = struct.unpack('Q', datas[0x10:0x18])[0]
+        result['SerialNumber'] = struct.unpack('I', datas[0x18:0x1c])[0]
+        result['ReferenceCount'] = struct.unpack('I', datas[0x1c:0x20])[0]
+        if result['VolumeLabelLength'] == 0:
+            result['VolumeLabel'] = ''
+        elif result['VolumeLabelLength'] < 0x40:
+            try:
+                result['VolumeLabel'] = datas[0x20:0x20+result['VolumeLabelLength']].decode('utf-16')
+            except Exception:
+                result['VolumeLabel'] = ''
+        else:
+            result['VolumeLabel'] = ''
+    return result
+
+
 def decode_device_object(address):
     global bitness
     result = {}
-    datas = get_va_memory(address, 0x20)
+    datas = get_va_memory(address, 0x140)
     if datas is None:
         return None
     if bitness == 64:
@@ -3413,6 +3450,9 @@ def decode_device_object(address):
         result['DriverObject'] = struct.unpack('Q', datas[8:0x10])[0]
         result['NextDevice'] = struct.unpack('Q', datas[0x10:0x18])[0]
         result['AttachedDevice'] = struct.unpack('Q', datas[0x18:0x20])[0]
+        result['CurrentIrp'] = struct.unpack('Q', datas[0x20:0x28])[0]
+        result['Vpb'] = struct.unpack('Q', datas[0x38:0x40])[0]
+        result['DeviceType'] = struct.unpack('I', datas[0x48:0x4c])[0]
     else:
         result['ReferenceCount'] = struct.unpack('I', datas[4:8])[0]
         result['DriverObject'] = struct.unpack('I', datas[8:0xc])[0]
@@ -3569,6 +3609,36 @@ def check_driver_IRP_table(drv_obj):
 
 def crawl_device_object(address):
     dev_obj = decode_device_object(address)
+    if dev_obj['Vpb'] > 0xffff80000000000:
+        vpb = decode_vpb(dev_obj['Vpb'])
+        print("  VPB : %x ('%s')" % (dev_obj['Vpb'], vpb['VolumeLabel']))
+        vpb_devices = ['DeviceObject', 'RealDevice']
+        for ccheck_vpb_dev in vpb_devices:
+            if vpb[ccheck_vpb_dev] > 0xffff80000000000:
+                last_dev_address = vpb[ccheck_vpb_dev]
+                vpb_devobj = decode_device_object(vpb[ccheck_vpb_dev])
+                print("    VPB %s Device Object : %x" % (ccheck_vpb_dev, vpb[ccheck_vpb_dev]))
+                if vpb[ccheck_vpb_dev] == address:
+                    print("    (Same Device)")
+                    continue
+                while vpb_devobj['AttachedDevice'] != 0:
+                    print("  VPB Device : %x / Driver Object : %x" % (last_dev_address, vpb_devobj['DriverObject']))
+                    drv_obj = decode_driver_object(vpb_devobj['DriverObject'])
+                    if drv_obj is None:
+                        print("  [!] DriverObject Invalid !")
+                    else:
+                        check_driver_IRP_table(drv_obj)
+                    last_dev_address = vpb_devobj['AttachedDevice']
+                    vpb_devobj = decode_device_object(vpb_devobj['AttachedDevice'])
+                    if vpb_devobj is None:
+                        return
+                print("  VPB Device : %x / Driver Object : %x" % (last_dev_address, vpb_devobj['DriverObject']))
+                drv_obj = decode_driver_object(vpb_devobj['DriverObject'])
+                if drv_obj is None:
+                    print("  [!] DriverObject Invalid !")
+                else:
+                    check_driver_IRP_table(drv_obj)
+        print('')
     while dev_obj['AttachedDevice'] != 0:
         print("  Driver Object : %x" % (dev_obj['DriverObject']))
         drv_obj = decode_driver_object(dev_obj['DriverObject'])
@@ -4744,27 +4814,156 @@ def is_CallbackRoutine(address):
     return False
 
 
-def find_all_Callbacks():
+def cb_callback_list_CM(address):
+    global cm_Callback_struct
+
+    altitude = get_unicode_from_va_no_zero(address+cm_Callback_struct['altitude'])
+    cb_func = get_qword_from_va(address+cm_Callback_struct['callback'])
+
+    drv_base = get_driver_name_from_address(address)
+    if drv_base is not None and drv_base == b"c:\\windows\\system32\\ntoskrnl.exe":
+        return
+
+    print("  [*] Altitude %s" % (altitude.decode()))
+    dvr_name = get_driver_name_from_address(cb_func)
+    if dvr_name is not None:
+        dvr_name = get_driver_name(dvr_name)
+        if not is_in_ms_list(dvr_name):
+            print("    Callback %x -> %s (not in white list) SUSPICIOUS" % (cb_func, dvr_name.decode()))
+        elif debug > 0:
+            print("    Callback %x : %s" % (cb_func, dvr_name.decode()))
+    else:
+        code = get_va_memory(cb_func, 0x10)
+        code = ' '.join(["%02x" % a for a in bytearray(code)])
+        print("    Callback %x -> SUSPICIOUS ***Unknown*** %s" % (cb_func, code))
+
+
+def is_cm_Callback(address):
+    cm_ptr = get_qword_from_va(address)
+    if cm_ptr is not None and is_kernel_space(cm_ptr, 8) and is_list_entry(cm_ptr):
+        pool_tag = get_pool_tag(cm_ptr)
+        if pool_tag is not None and pool_tag['tag'] == b'CMcb':
+            if debug > 0:
+                print("  [*] CallbackListHead at 0x%x" % (address))
+            return address
+
+
+def decode_cm_Callback(address):
+    global addr_CallbackListHead
+    global cm_Callback_struct
+
+    cm_Callback_struct = {}
+    ptr_cm = get_qword_from_va(address)
+    pool_tag = get_pool_tag(ptr_cm)
+    for chunk_indx in range(pool_tag['size'] >> 3):
+        caddress = ptr_cm+(chunk_indx << 3)
+        cvalue = get_qword_from_va(caddress)
+        if not ((cvalue >> 48) in [0, 0xffff]):
+            cm_Callback_struct['cookie_offset'] = chunk_indx << 3
+            cm_Callback_struct['cookie'] = cvalue
+        elif get_unicode_from_va(caddress) is not None:
+            raw_altitude = get_unicode_from_va(caddress)
+            if raw_altitude.count(b'\x00') == (len(raw_altitude) >> 1):
+                u_altitude = get_unicode_from_va_no_zero(caddress)
+                if 0 < len(u_altitude) < 0x20:
+                    cm_Callback_struct['altitude'] = chunk_indx << 3
+        elif chunk_indx > 2 and is_list_entry(cvalue) and 'filters_list' not in cm_Callback_struct:
+            cm_Callback_struct['filters_list'] = chunk_indx << 3
+        elif is_kernel_space(cvalue):
+            rights = get_page_rights(cvalue)
+            if rights['exec']:
+                cm_Callback_struct['callback'] = chunk_indx << 3
+        if 'filters_list' in cm_Callback_struct:
+            break
+
+
+def check_registry_callbacks():
+    global addr_CallbackListHead
+    if addr_CallbackListHead is None:
+        addr_CallbackListHead = identify_list_entry_from_code('nt!CmUnRegisterCallback', is_cm_Callback)
+        if addr_CallbackListHead is None:
+            addr_CallbackListHead = identify_list_entry_from_code('nt!CmSetCallbackObjectContext', is_cm_Callback)
+
+    if addr_CallbackListHead is None and get_va_memory(resolve_symbol('nt!CmUnRegisterCallback'), 5) == b'' and get_va_memory(resolve_symbol('nt!CmSetCallbackObjectContext'), 5) == b'':
+        addr_CallbackListHead = crawl_nt_for_CallbackListHead()
+
+    if addr_CallbackListHead is not None:
+        if cm_Callback_struct is None or len(cm_Callback_struct) == 0:
+            decode_cm_Callback(addr_CallbackListHead)
+        if 'altitude' in cm_Callback_struct and 'callback' in cm_Callback_struct:
+            print(" [*] CallbackListHead")
+            crawl_list(addr_CallbackListHead, cb_callback_list_CM, True)
+    if addr_CallbackListHead is None:
+        print("  [!] CallbackListHead not found (probably empty)")
+    elif 'altitude' not in cm_Callback_struct or 'callback' not in cm_Callback_struct:
+        print("  [!] CallbackListHead is not correctly decoded :(")
+
+
+def crawl_nt_for_CallbackListHead():
+    data_section = get_driver_section(b'nt', b'.data')
+    data_section_addr = get_section_address(b'nt', b'.data')
+
+    sdata_section = struct.unpack('Q'*(len(data_section) >> 3), data_section)
+
+    nt_base = resolve_symbol('nt')
+
+    for i in range(len(sdata_section)):
+        qword = sdata_section[i]
+        if is_kernel_space(qword, 8) and not (nt_base <= qword < (nt_base+0x10000000)) and is_list_entry(qword):
+            pool_tag = get_pool_tag(qword)
+            if pool_tag is not None and pool_tag['tag'] == b'CMcb':
+                for chunk_indx in range(pool_tag['size'] >> 3):
+                    caddress = qword+(chunk_indx << 3)
+                    cvalue = get_qword_from_va(caddress)
+                    if not ((cvalue >> 48) in [0, 0xffff]):
+                        for incrase_cookie in range(50):
+                            if (cvalue+incrase_cookie) in sdata_section[i-10:i+10]:  # is cookie in near datas
+                                if debug > 0:
+                                    print(" [*] CallbackListHead is at 0x%x" % (data_section_addr+(i << 3)))
+                                return data_section_addr+(i << 3)
+
+
+def find_all_old_Callbacks():
     global debug
     global obpRootDirectoryObject
     global Drivers_list
     global bitness
+    global addr_IopNotifyLastChanceShutdownQueueHead
+    global addr_IopNotifyShutdownQueueHead
+    global addr_PspLoadImageNotifyRoutine
+    global addr_PspCreateProcessNotifyRoutine
+    global addr_PspCreateThreadNotifyRoutine
 
     addr_IopNotifyLastChanceShutdownQueueHead = identify_list_entry_from_code('nt!IoRegisterLastChanceShutdownNotification')
+    addr_IopNotifyShutdownQueueHead = identify_list_entry_from_code('nt!IoRegisterShutdownNotification')
+    addr_PspLoadImageNotifyRoutine = identify_list_entry_from_code('nt!PsRemoveLoadImageNotifyRoutine', is_CallbackRoutine)
+    addr_PspCreateProcessNotifyRoutine = identify_list_entry_from_code('nt!PsSetCreateProcessNotifyRoutine', is_CallbackRoutine)
+    addr_PspCreateThreadNotifyRoutine = identify_list_entry_from_code('nt!PsSetCreateThreadNotifyRoutine', is_CallbackRoutine)
+
+
+def check_all_old_Callbacks():
+    global debug
+    global obpRootDirectoryObject
+    global Drivers_list
+    global bitness
+    global addr_IopNotifyLastChanceShutdownQueueHead
+    global addr_IopNotifyShutdownQueueHead
+    global addr_PspLoadImageNotifyRoutine
+    global addr_PspCreateProcessNotifyRoutine
+    global addr_PspCreateThreadNotifyRoutine
+
     if addr_IopNotifyLastChanceShutdownQueueHead is not None:
         print(" [*] IopNotifyLastChanceShutdownQueueHead")
         crawl_list(addr_IopNotifyLastChanceShutdownQueueHead, cb_callback_list_devices, True)
     else:
         print(" [!] IopNotifyLastChanceShutdownQueueHead not found")
 
-    addr_IopNotifyShutdownQueueHead = identify_list_entry_from_code('nt!IoRegisterShutdownNotification')
     if addr_IopNotifyShutdownQueueHead is not None:
         print(" [*] IopNotifyShutdownQueueHead")
         crawl_list(addr_IopNotifyShutdownQueueHead, cb_callback_list_devices, True)
     else:
         print(" [!] IopNotifyShutdownQueueHead not found")
 
-    addr_PspLoadImageNotifyRoutine = identify_list_entry_from_code('nt!PsRemoveLoadImageNotifyRoutine', is_CallbackRoutine)
     if addr_PspLoadImageNotifyRoutine is not None:
         print(" [*] PspLoadImageNotifyRoutine")
         offset = 0
@@ -4793,7 +4992,6 @@ def find_all_Callbacks():
     else:
         print(" [!] PspLoadImageNotifyRoutine not found")
 
-    addr_PspCreateProcessNotifyRoutine = identify_list_entry_from_code('nt!PsSetCreateProcessNotifyRoutine', is_CallbackRoutine)
     if addr_PspCreateProcessNotifyRoutine is not None:
         print(" [*] PspCreateProcessNotifyRoutine")
         offset = 0
@@ -4822,7 +5020,6 @@ def find_all_Callbacks():
     else:
         print(" [!] PspCreateProcessNotifyRoutine not found")
 
-    addr_PspCreateThreadNotifyRoutine = identify_list_entry_from_code('nt!PsSetCreateThreadNotifyRoutine', is_CallbackRoutine)
     if addr_PspCreateThreadNotifyRoutine is not None:
         print(" [*] PspCreateThreadNotifyRoutine")
         offset = 0
@@ -4855,7 +5052,7 @@ def find_all_Callbacks():
 def check_sensitives_devices():
     global rootDirectoryObject_list
     global obj_header_types
-    devs_to_check = [b"\\Ntfs", b"\\Fat", b"\\Device\\KeyboardClass0", b"\\Device\\Tcp", b"\\Device\\Udp", b"\\Device\\Tcp6", b"\\Device\\Udp6", b"\\Device\\Afd", b"\\Device\\BitLocker", b"\\Device\\Ip", b"\\Device\\Ip6", b"\\Device\\Ndis", b"\\Device\\RawDisk", b"\\Device\\RawIp", b"\\Device\\VolMgrControl", b"\\GLOBAL??\\PhysicalDrive0", b"\\GLOBAL??\\PhysicalDrive1", b"\\Device\\Harddisk1\\DR1", b"\\GLOBAL??\\C:", b"\\Device\\Null", b"\\Device\\Beep"]
+    devs_to_check = [b"\\Ntfs", b"\\Fat", b"\\Device\\KeyboardClass0", b"\\Device\\Tcp", b"\\Device\\Udp", b"\\Device\\Tcp6", b"\\Device\\Udp6", b"\\Device\\Afd", b"\\Device\\BitLocker", b"\\Device\\Ip", b"\\Device\\Ip6", b"\\Device\\Ndis", b"\\Device\\RawDisk", b"\\Device\\RawIp", b"\\Device\\VolMgrControl", b"\\GLOBAL??\\PhysicalDrive0", b"\\GLOBAL??\\PhysicalDrive1", b"\\Device\\Harddisk1\\DR1", b"\\GLOBAL??\\C:", b"\\Device\\Null", b"\\Device\\Beep", b"\\Device\\Nsi", b"\\Device\\Tcp"]
     for cdev_name in devs_to_check:
         if not (cdev_name in rootDirectoryObject_list):
             continue
@@ -5128,7 +5325,7 @@ def check_driver_integrity(image_base=None, driver_path=None):
         driver_path = get_driver_name(Drivers_list[image_base]['Name'].lower())
         try:
             driver_fd = open(driver_path.decode(), "rb")
-        except:
+        except Exception:
             return None
         if not (driver_fd):
             return None
@@ -5737,7 +5934,7 @@ def is_PG_function(cfunc):
                 all_instr_base[cbase] = True
                 try:
                     instr_list = disas.get_function_instructions(cbase, get_va_memory, 80)
-                except:
+                except Exception:
                     print("  [!] broked function %x" % (cbase))
                     continue
                 for cinstr in instr_list:
@@ -6518,7 +6715,7 @@ def get_files_from_pfn():
                     if not (carea['file_object']['FileName'] in blacklist):
                         try:
                             print("%x %x %s" % (c_pfn_id, ori_pte, carea['file_object']['FileName'].decode()))
-                        except:
+                        except Exception:
                             pass
         c_pfn_id += 1
 
@@ -6851,7 +7048,8 @@ while True:
                                 print("  Tag infos : %s" % (pool_chunk['tag_infos']))
                             print("  Tag       : %s" % (''.join(['%c' % a if a < 0x80 else '?' for a in pool_chunk['tag']])))
                             print("  Size      : %x" % (pool_chunk['size']))
-                            print("  Prev Size : %x" % (pool_chunk['prev_size']))
+                            if 'prev_size' in pool_chunk:
+                                print("  Prev Size : %x" % (pool_chunk['prev_size']))
                         else:
                             print("%x" % (addr))
             elif args[0] == "pool":
@@ -6997,9 +7195,12 @@ while True:
                     print(" [?] PatchGuard is initialized but no execution was found")
                 else:
                     print(" [!] PatchGuard is NOT running")
+            elif args[0] == "creg":
+                check_registry_callbacks()
             elif args[0] == "ccb":
                 crawl_callback_directory()
-                find_all_Callbacks()
+                find_all_old_Callbacks()
+                check_all_old_Callbacks()
             elif args[0] == "cci":
                 print("Checking CI.dll")
                 g_CiOptions = identify_CiOptions()
@@ -7168,7 +7369,8 @@ while True:
                     else:
                         print("FileName     : %s" % obj_infos["FileName"])
                         print("DeviceObject : 0x%x" % obj_infos["DeviceObject"])
-                        print("FsContext    : 0x%x" % obj_infos["FsContext"])
+                        print("FsContext    : 0x%x (Scb)" % obj_infos["FsContext"])
+                        print("FsContext2   : 0x%x (Ccb)" % obj_infos["FsContext2"])
                         print("Vpb          : 0x%x" % obj_infos["Vpb"])
                 else:
                     print("Specify the FILE_OBJECT address")
