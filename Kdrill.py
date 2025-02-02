@@ -19,6 +19,7 @@ import ms_infos
 ctypes.windll.kernel32.Wow64DisableWow64FsRedirection(ctypes.byref(ctypes.c_long()))
 
 bitness = 64
+cpu = 'x8664'
 force_cr3 = False
 is_gdb = False
 is_live = False
@@ -63,6 +64,7 @@ addr_PspLoadImageNotifyRoutine = None
 addr_PspCreateProcessNotifyRoutine = None
 addr_PspCreateThreadNotifyRoutine = None
 addr_CallbackListHead = None
+addr_PiDDBCacheTable = None
 
 
 phys_to_file = []
@@ -82,6 +84,7 @@ device_node_struct = None
 file_object_struct = None
 iopRootNodeDevice = None
 pPoolBigPageTable = None
+pPoolBigPageTable_type = 1
 struct_FltmgrFrame = None
 struct_FltmgrInstance = None
 struct_FltmgrFltFilter = None
@@ -318,7 +321,7 @@ def readFromPhys(offset, length):
 
     datas = b""
 
-    if dump_type == 2 or dump_type == 6:
+    if dump_type == 2 or dump_type == 5 or dump_type == 6:
         read_offset = offset & 0xfffffffffffff000
         read_size = (offset+length)-read_offset
         datas_tb = []
@@ -434,8 +437,8 @@ def download_from_ms(driver_name=None, image_base=None):
         path_file = "c:\\symbols\\%s\\%s\\%s" % (end_name, identifier, end_name)
         if os.path.isfile(path_file):
             image_base_to_file[image_base] = path_file
-            if debug >= 1:
-                print(" File : %s" % path_file)
+            if debug > 0:
+                print("  [*] Use file : %s" % path_file)
             return
 
         if end_name in multi_names:
@@ -450,6 +453,8 @@ def download_from_ms(driver_name=None, image_base=None):
             received = False
             for cname in multi_names[end_name]:
                 dl_link = "http://msdl.microsoft.com/download/symbols/%s/%s/%s" % (cname, identifier, cname)
+                if debug > 0:
+                    print("  [*] Download %s from %s" % (end_name, dl_link))
                 try:
                     response = openurl(dl_link)
                     datas = response.read()
@@ -463,6 +468,8 @@ def download_from_ms(driver_name=None, image_base=None):
                 return
         else:
             dl_link = "http://msdl.microsoft.com/download/symbols/%s/%s/%s" % (end_name, identifier, end_name)
+            if debug > 0:
+                print("  [*] Download %s from %s" % (end_name, dl_link))
             try:
                 response = openurl(dl_link)
                 datas = response.read()
@@ -744,6 +751,8 @@ def load_driver():
         end_of_physmem = base_page+size_buffer
     pfnDatabase = 0
     psActiveProcessHead = 0
+    global lde
+    import lde
     cr3 = struct.unpack("Q", rawdata[0:8])[0] & 0xfffffffffffff000
     Drivers_list = {}
     ntoskrnl_base = struct.unpack("Q", rawdata[0x10:0x18])[0]
@@ -1030,6 +1039,9 @@ def gdb_setup(ip, port):
     global get_pages_list_iter
     get_pages_list_iter = gdb_get_pages_list_iter
 
+    global lde
+    import lde
+
     gdb_connect()
     gdb_send(b'!')  # Advise the target that extended remote debugging is being used
     gdb_send(b'?')  # Report why the target halted.
@@ -1127,6 +1139,9 @@ def set_infos_from_aff4_dump(fileDump):
     pfnDatabase = 0
     psActiveProcessHead = 0
 
+    global lde
+    import lde
+
     run_offset = 0
     temp_file_offset = 0
     while run_offset < len(runs_data):
@@ -1164,6 +1179,8 @@ def set_infos_from_raw_dump(fileDump):
 
     phys_to_file = [[0, os.stat(fileDump).st_size, 0]]
 
+    global lde
+    import lde
     print("[*] Searching a valid CR3 in raw dump")
     cr3_val = find_valid_cr3()
     if cr3_val is None:
@@ -1180,6 +1197,31 @@ def set_infos_from_raw_dump(fileDump):
                 if ntoskrnl_base in Drivers_list and 'PE' in Drivers_list[ntoskrnl_base] and 'EAT' in Drivers_list[ntoskrnl_base]['PE']:
                     if b'PsLoadedModuleList' in Drivers_list[ntoskrnl_base]['PE']['EAT']:
                         psLoadedModuleList = Drivers_list[ntoskrnl_base]['PE']['EAT'][b'PsLoadedModuleList']
+
+
+def set_aarch64_cpu():
+    global isPXE
+    global get_from_PXE
+    global get_from_PPE
+    global get_from_PDE
+    global get_from_PTE
+    global list_pages_from_PXE
+    global list_pages_from_PPE
+    global list_pages_from_PDE
+    global list_pages_from_PTE
+    global cpu
+    global lde
+    isPXE = isPXE_Aarch64
+    get_from_PXE = get_from_PXE_Aarch64
+    get_from_PPE = get_from_PPE_Aarch64
+    get_from_PDE = get_from_PDE_Aarch64
+    get_from_PTE = get_from_PTE_Aarch64
+    list_pages_from_PXE = list_pages_from_PXE_Aarch64
+    list_pages_from_PPE = list_pages_from_PXE_Aarch64
+    list_pages_from_PDE = list_pages_from_PXE_Aarch64
+    list_pages_from_PTE = list_pages_from_PXE_Aarch64
+    cpu = 'aarch64'
+    import lde_armv8 as lde
 
 
 def set_infos_from_crashdump_header(rawdata):
@@ -1202,8 +1244,15 @@ def set_infos_from_crashdump_header(rawdata):
             pfnDatabase = raw_to_int(rawdata[0x18:0x20])
             psLoadedModuleList = raw_to_int(rawdata[0x20:0x28])
             psActiveProcessHead = raw_to_int(rawdata[0x28:0x30])
+            MachineImageType = raw_to_int(rawdata[0x30:0x34])
             offset_DumpType = 0xf98
             dump_type = raw_to_int(rawdata[offset_DumpType:offset_DumpType+4])
+            if MachineImageType == 0xAA64:  # ARCH_Aarch64
+                set_aarch64_cpu()
+            else:
+                global lde
+                import lde
+
             if debug > 0:
                 print("      DirectoryTableBase : 0x%X" % (cr3))
                 print("      PFN Database : 0x%X" % (pfnDatabase))
@@ -1213,6 +1262,8 @@ def set_infos_from_crashdump_header(rawdata):
                     print("      Full dump")
                 elif dump_type == 2:
                     print("      Kernel dump")
+                elif dump_type == 5:
+                    print("      Bitmap Full dump")
                 elif dump_type == 6:
                     print("      Kernel dump v2")
             offset_PHYS_MEM_DESC = 0x88
@@ -1254,7 +1305,8 @@ def set_infos_from_crashdump_header(rawdata):
                             temp_file_offset += 0x1000
                             end_of_physmem = base_page+0x1000
                     bmp_ptr += 1
-            if dump_type == 6 and rawdata[offset_SDMP:offset_SDMP+0x4] == b"SDMP" and rawdata[offset_SDMP+0x8:offset_SDMP+0xc] == b"\x00\x00\x00\x00":
+
+            if (dump_type == 5 or dump_type == 6) and (rawdata[offset_SDMP:offset_SDMP+0x4] == b"SDMP" or rawdata[offset_SDMP:offset_SDMP+0x4] == b"FDMP") and rawdata[offset_SDMP+0x8:offset_SDMP+0xc] == b"\x00\x00\x00\x00":
                 sdmp_HeaderSize = raw_to_int(rawdata[offset_SDMP+0x20:offset_SDMP+0x28])
                 sdmp_BitmapSize = raw_to_int(rawdata[offset_SDMP+0x28:offset_SDMP+0x30])
                 sdmp_dump_size = raw_to_int(rawdata[offset_SDMP+0x30:offset_SDMP+0x38])
@@ -1276,6 +1328,8 @@ def set_infos_from_crashdump_header(rawdata):
                     bmp_ptr += 1
         elif rawdata[4:8] == b"DUMP":
             print("  [*] 32b image")
+            global lde
+            import lde
             if cr3 is None:
                 cr3 = raw_to_int(rawdata[0x10:0x14]) & 0xfffffffffffff000
             pfnDatabase = raw_to_int(rawdata[0x14:0x18])
@@ -1548,6 +1602,91 @@ def get_from_PXE(va_address):
     return datas
 
 
+def get_from_PTE_Aarch64(PTE_entry, va_address):
+    global cache_pages
+    datas = None
+    page_tables = readFromPhys(PTE_entry, 0x1000)
+
+    index = (va_address & 0x1ff000) >> 12
+    page_table_i = struct.unpack('Q', (page_tables[index << 3:(index << 3)+8]))[0]
+    ptr_page_table_i = (page_table_i & 0x0000FFFFFFFFF000)
+    if debug > 1:
+        print("      PTE [0x%x] : 0x%016X (0x%016X)" % (index, page_table_i, (va_address & 0xfffffffffffff000)))
+    if (page_table_i & 0x802) == 0x802:  # soft bits for Transition
+        page_table_i = page_table_i | 1
+    if (page_table_i & 3) == 3:
+        if ptr_page_table_i in cache_pages:
+            datas = cache_pages[ptr_page_table_i]
+        else:
+            if len(cache_pages) > 0x10000:
+                cache_pages = {}
+            datas = readFromPhys(ptr_page_table_i, 0x1000)
+            if debug > 1:
+                print("try access PTE %x" % (ptr_page_table_i))
+                print('------------------------')
+            cache_pages[ptr_page_table_i] = datas
+    return datas
+
+
+def get_from_PDE_Aarch64(PDE_entry, va_address):
+    global cache_pages
+    datas = None
+    page_tables = readFromPhys(PDE_entry, 0x1000)
+
+    index = (va_address & 0x3fe00000) >> 21
+    page_table_i = raw_to_int(page_tables[index << 3:(index << 3)+8])
+    ptr_page_table_i = (page_table_i & 0x0000FFFFFFFFF000)
+
+    if ((page_table_i & 1) == 1):
+        if ((page_table_i & 2) == 0):
+            if debug > 1:
+                print("    PDE [0x%x] : 0x%016X (0x%016X) - G" % (index, page_table_i, (va_address & 0xffffffffffe00000)))
+            big_index = (va_address & 0x1ff000)
+            if (ptr_page_table_i+big_index) in cache_pages:
+                datas = cache_pages[ptr_page_table_i+big_index]
+            else:
+                datas = readFromPhys(ptr_page_table_i+big_index, 0x1000)
+                cache_pages[ptr_page_table_i+big_index] = datas
+            return datas
+        else:
+            if debug > 1:
+                print("    PDE [0x%x] : 0x%016X (0x%016X)" % (index, page_table_i, (va_address & 0xffffffffffe00000)))
+            datas = get_from_PTE_Aarch64(ptr_page_table_i, va_address)
+            return datas
+    return datas
+
+
+def get_from_PPE_Aarch64(PPE_entry, va_address):
+    datas = None
+    page_tables = readFromPhys(PPE_entry, 0x1000)
+
+    index = (va_address & 0x7fc0000000) >> 30
+    page_table_i = raw_to_int(page_tables[index << 3:(index << 3)+8])
+    ptr_page_table_i = (page_table_i & 0x0000FFFFFFFFF000)
+    if debug > 1:
+        print("  PPE [0x%x] : 0x%016X (0x%016X)" % (index, page_table_i, (va_address & 0xffffffffc0000000)))
+    if ((page_table_i & 1) == 1):
+        datas = get_from_PDE_Aarch64(ptr_page_table_i, va_address)
+        return datas
+    return datas
+
+
+def get_from_PXE_Aarch64(va_address):
+    global cr3
+    datas = None
+    page_tables = readFromPhys(cr3, 0x1000)
+    index = (va_address & 0xff8000000000) >> 39
+    page_table_i = raw_to_int(page_tables[index << 3:(index << 3)+8])
+    ptr_page_table_i = (page_table_i & 0x0000FFFFFFFFF000)
+    valid = page_table_i & 1
+    if debug > 1:
+        print("PXE [0x%x] : 0x%016X (0x%016X)" % (index, page_table_i, (va_address & 0xffffff8000000000)))
+    if (valid == 1):
+        datas = get_from_PPE_Aarch64(ptr_page_table_i, va_address)
+        return datas
+    return datas
+
+
 def get_rights_from_page_table(PT_entry):
     rights = {}
     rights['value'] = ""
@@ -1575,6 +1714,30 @@ def get_rights_from_page_table(PT_entry):
     else:
         rights['value'] += "-"
         rights['CopyOnWrite'] = False
+    return rights
+
+
+def get_rights_from_page_table_Aarch64(PT_entry):
+    rights = {}
+    rights['value'] = ""
+    if (PT_entry & 0x1) == 0x1:
+        rights['value'] += "r"
+        rights['present'] = True
+    else:
+        rights['value'] += "-"
+        rights['present'] = False
+    if (PT_entry & 0x80) == 0:
+        rights['value'] += "w"
+        rights['write'] = True
+    else:
+        rights['value'] += "-"
+        rights['write'] = False
+    if (PT_entry & 0x20000000000000) != 0:  # PXN: Privileged execute never
+        rights['value'] += "-"
+        rights['exec'] = False
+    else:
+        rights['value'] += "x"
+        rights['exec'] = True
     return rights
 
 
@@ -1689,6 +1852,108 @@ def list_pages_from_PXE(PXE_entry, va_address_from=0, va_address_to=0xffffffffff
                     if debug > 1:
                         print("PXE [0x%x] : 0x%016X (0x%016X)" % (i, page_table_i, (va_address | (i << 39))))
                     for clist in list_pages_from_PPE(ptr_page_table_i, (va_address | (i << 39)), va_address_from, va_address_to):
+                        yield clist
+
+
+def list_pages_from_PTE_Aarch64(PTE_entry, va_address, va_address_from=0, va_address_to=0xffffffffffffffff):
+    global debug
+    page_tables = readFromPhys(PTE_entry, 0x1000)
+    phys_list = {}
+
+    if page_tables is not None and len(page_tables) == 0x1000:
+        for i in range(0x1000 >> 3):
+            page_table_i = struct.unpack('Q', page_tables[i << 3:(i << 3)+8])[0]
+            ptr_page_table_i = (page_table_i & 0x0000FFFFFFFFF000)
+            cva_address = ((va_address | (i << 12)) & 0xfffffffff000)
+
+            if cva_address >= (va_address_from & 0xfffffffff000) and cva_address < (va_address_to & 0xfffffffff000):
+                if ptr_page_table_i in phys_list:
+                    continue
+                phys_list[ptr_page_table_i] = None
+                if (page_table_i & 0x1):
+                    if debug > 1:
+                        print("      PTE [0x%x] : 0x%016X (0x%016X)" % (i, page_table_i, (va_address | (i << 12))))
+                    right = get_rights_from_page_table_Aarch64(page_table_i)
+                    cdesc = {}
+                    cdesc["right"] = right
+                    cdesc["phys"] = ptr_page_table_i
+                    yield [(va_address | (i << 12)), cdesc]
+
+
+def list_pages_from_PDE_Aarch64(PDE_entry, va_address=0, va_address_from=0, va_address_to=0xffffffffffffffff):
+    global debug
+
+    page_tables = readFromPhys(PDE_entry, 0x1000)
+    phys_list = {}
+    if page_tables is not None and len(page_tables) == 0x1000:
+        for i in range(0x1000 >> 3):
+            page_table_i = struct.unpack('Q', page_tables[i << 3:(i << 3)+8])[0]
+            ptr_page_table_i = (page_table_i & 0x0000FFFFFFFFF000)
+            if ((((va_address | (i << 21)) & 0xffffffe00000) >= (va_address_from & 0xffffffe00000)) and ((va_address_to & 0xffffffe00000) >= (((va_address) | (i << 21)) & 0xffffffe00000))):
+                if ptr_page_table_i in phys_list:
+                    continue
+                phys_list[ptr_page_table_i] = None
+                if ((page_table_i & 1) == 1):
+                    if ((page_table_i & 2) == 0):
+                        if debug > 1:
+                            print("    PDE [0x%x] : 0x%016X (0x%016X) - G" % (i, page_table_i, (va_address | (i << 21))))
+                        right = get_rights_from_page_table_Aarch64(page_table_i)
+                        for y in range(0x1000 >> 3):
+                            current_g_address = (va_address | (i << 21) | (y << 12)) & 0xfffffffff000
+                            if ((current_g_address >= (va_address_from & 0xfffffffff000)) and ((va_address_to & 0xfffffffff000) > (current_g_address))):
+                                cdesc = {}
+                                cdesc["right"] = right
+                                cdesc["phys"] = ptr_page_table_i+(y << 12)
+                                cdesc["big_page"] = True
+                                yield [(va_address | (i << 21))+(y << 12), cdesc]
+                    else:
+                        if debug > 1:
+                            print("    PDE [0x%x] : 0x%016X (0x%016X)" % (i, page_table_i, (va_address | (i << 21))))
+                        for clist in list_pages_from_PTE_Aarch64(ptr_page_table_i, (va_address | (i << 21)), va_address_from, va_address_to):
+                            if clist is not None:
+                                yield clist
+
+
+def list_pages_from_PPE_Aarch64(PPE_entry, va_address=0, va_address_from=0, va_address_to=0xffffffffffffffff):
+    global debug
+
+    page_tables = readFromPhys(PPE_entry, 0x1000)
+    phys_list = {}
+    if page_tables is not None and len(page_tables) == 0x1000:
+        for i in range(0x1000 >> 3):
+            page_table_i = struct.unpack('Q', page_tables[i << 3:(i << 3)+8])[0]
+            ptr_page_table_i = (page_table_i & 0x0000FFFFFFFFF000)
+            if ((((va_address | (i << 30)) & 0xffffc0000000) >= (va_address_from & 0xffffc0000000)) and ((va_address_to & 0xffffc0000000) >= (((va_address) | (i << 30)) & 0xffffc0000000))):
+                if ptr_page_table_i in phys_list:
+                    continue
+                phys_list[ptr_page_table_i] = None
+                if ((page_table_i & 1) == 1):
+                    if debug > 1:
+                        print("  PPE [0x%x] : 0x%016X (0x%016X)" % (i, page_table_i, (va_address | (i << 30))))
+                    for clist in list_pages_from_PDE_Aarch64(ptr_page_table_i, (va_address | (i << 30)), va_address_from, va_address_to):
+                        if clist is not None:
+                            yield clist
+
+
+def list_pages_from_PXE_Aarch64(PXE_entry, va_address_from=0, va_address_to=0xffffffffffffffff):
+    global debug
+    va_address = 0
+    page_tables = readFromPhys(PXE_entry, 0x1000)
+    phys_list = {}
+    if page_tables is not None and len(page_tables) == 0x1000:
+        for i in range(0x1000 >> 3):
+            page_table_i = struct.unpack('Q', page_tables[i << 3:(i << 3)+8])[0]
+            ptr_page_table_i = (page_table_i & 0x0000FFFFFFFFF000)
+            if (i == 0x100):
+                va_address = 0xFFFF000000000000
+            if ((((va_address | (i << 39)) & 0xff8000000000) >= (va_address_from & 0xff8000000000)) and ((va_address_to & 0xff8000000000) >= (((va_address) | (i << 39)) & 0xff8000000000))):
+                if ptr_page_table_i in phys_list:
+                    continue
+                phys_list[ptr_page_table_i] = None
+                if ((page_table_i & 1) == 1):
+                    if debug > 1:
+                        print("PXE [0x%x] : 0x%016X (0x%016X)" % (i, page_table_i, (va_address | (i << 39))))
+                    for clist in list_pages_from_PPE_Aarch64(ptr_page_table_i, (va_address | (i << 39)), va_address_from, va_address_to):
                         yield clist
 
 
@@ -1852,6 +2117,25 @@ def isPXE(phys_addr):
         potential_PXE_0 = raw_to_int(rawdata[0:8])
         potential_PXE_fff = raw_to_int(rawdata[0xff8:0x1000])
         if (potential_PXE_0 & 0xfdf) == 0x847 and (potential_PXE_fff & 0xfff) == 0x63:
+            return True
+    else:
+        potential_PDE_0 = raw_to_int(rawdata[0:8])
+        if (potential_PDE_0 & 0xfff) == 0x1 and (potential_PDE_0 & 0xfffffffffffffffff000) != 0:
+            return True
+    return False
+
+
+def isPXE_Aarch64(phys_addr):
+    global bitness
+    phys_addr = phys_addr & 0xfffffffffffffffffffC
+    if phys_addr == 0 or phys_addr > 0x40000000000 or (phys_addr & 0xfff) != 0:
+        return False
+    rawdata = readFromPhys(phys_addr, 0x1000)
+    if rawdata is None or len(rawdata) < 0x1000:
+        return False
+    if bitness == 64:
+        potential_PXE_0 = raw_to_int(rawdata[0:8])
+        if (potential_PXE_0 & 0xfff) == 0xf03:
             return True
     else:
         potential_PDE_0 = raw_to_int(rawdata[0:8])
@@ -3312,6 +3596,100 @@ def get_all_objects_by_name(path=b"", directory_base=None):
             next_obj = nnext_obj
 
 
+def check_piddb_entry(unicode_entry):
+    global piddb_drv_name_list
+    if (unicode_entry+0x10) in piddb_drv_name_list:
+        return
+    drv_name = get_unicode_from_va_no_zero(unicode_entry+0x10)
+    int_time = get_dword_from_va(unicode_entry+0x20)
+    if drv_name is not None:
+        piddb_drv_name_list[unicode_entry+0x10] = {'name': drv_name, 'pe_timestamp': datetime.datetime.utcfromtimestamp(int_time).strftime("%Y-%m-%d %H:%M:%S")}
+
+
+def check_piddb_list_entry(base_stub):
+    if (base_stub+0x10) in piddb_drv_name_list:
+        return
+    return crawl_list(base_stub, check_piddb_entry)
+
+
+def crawl_balanced_links(root_node, func_callback):
+    resuts = []
+
+    func_callback(root_node+0x20)
+
+    left_right = struct.unpack('QQ', get_va_memory(root_node+8, 0x10))
+    for direction in left_right:
+        if (direction & 0xffff800000000000) == 0xffff800000000000 and (direction & 7) == 0:
+            root_ptr = get_qword_from_va(direction)
+            if root_ptr != root_node:
+                continue
+            resuts.append(crawl_balanced_links(direction, func_callback))
+    return resuts
+
+
+def find_PiDDBCacheTable():
+    global addr_PiDDBCacheTable
+    if addr_PiDDBCacheTable is not None:
+        return addr_PiDDBCacheTable
+
+    sections = [b"PAGEDATA", b".data"]
+    for csec in sections:
+        nt_page_addr = get_section_address(b"nt", csec)
+        if nt_page_addr is not None:
+            break
+    if nt_page_addr is None:
+        print("  [!] section address of nt is not accessible")
+        return
+    offset = 0
+    while True:
+        caddr = nt_page_addr+offset
+        sub_addr = get_qword_from_va(caddr)
+        if sub_addr is None:
+            return
+        if caddr != sub_addr:
+            offset += 8
+            continue
+        left_right = struct.unpack('QQ', get_va_memory(caddr+8, 0x10))
+        for direction in left_right:
+            if (direction & 0xffff800000000000) == 0xffff800000000000 and (direction & 7) == 0:
+                root_ptr = get_qword_from_va(direction)
+                if root_ptr != caddr:
+                    continue
+                cpooltag = get_pool_tag(direction)
+                if cpooltag is not None and cpooltag['tag'] == b'Ppsu' and cpooltag['size'] > 0x38:
+                    u_drv = get_unicode_from_va(direction+0x30)
+                    if u_drv is not None and len(u_drv) > 0:
+                        addr_PiDDBCacheTable = caddr
+                        return addr_PiDDBCacheTable
+        offset += 8
+
+
+def check_PiDDBCache():
+    global piddb_drv_name_list
+    piddb_drv_name_list = {}
+    find_PiDDBCacheTable()
+    if addr_PiDDBCacheTable is not None:
+        if debug > 0:
+            print("[*] PiDDBCacheTable is at %x" % (addr_PiDDBCacheTable))
+        dirs = struct.unpack('QQ', get_va_memory(addr_PiDDBCacheTable+8, 0x10))
+        for cdir in dirs:
+            if cdir != 0:
+                crawl_balanced_links(cdir, check_piddb_list_entry)
+                driver_list = get_drivers_list()
+                name_list = [cdrv['name'].decode().lower() for cdrv in piddb_drv_name_list.values()]
+                legit_drv_list = [driver_list[imagebase]['Name'].decode().split('\\')[-1].lower() for imagebase in driver_list]
+                for cdrv_name in name_list:
+                    if cdrv_name in legit_drv_list:
+                        if debug > 0:
+                            print("  [*] OK %s" % cdrv_name)
+                    else:
+                        print("  [!] %s not found!" % cdrv_name)
+
+    else:
+        if debug > 0:
+            print("[!] PiDDBCacheTable not found :(")
+
+
 def find_IopRootDeviceNode():
     global debug
     global iopRootNodeDevice
@@ -3813,8 +4191,72 @@ def find_retn(datas):
 
 
 def identify_list_entry_from_code(symbol, cbStructDetection=None, no_recursive=False):
+    if cpu == 'x8664':
+        return identify_list_entry_from_code_x8664(symbol, cbStructDetection, no_recursive)
+    elif cpu == 'aarch64':
+        return identify_list_entry_from_code_aarch64(symbol, cbStructDetection, no_recursive)
+
+
+def identify_list_entry_from_code_aarch64(symbol, cbStructDetection=None, no_recursive=False):
     global bitness
-    import lde
+    disas = lde.LDE(bitness)
+    from_addr = resolve_symbol(symbol)
+    if from_addr is None:
+        return
+
+    sub_func = []
+    instr_list = disas.get_function_instructions(from_addr, get_va_memory)
+    regs = {}
+    addr_list = list(instr_list.keys())
+    addr_list.sort()
+    for instr_addr in addr_list:
+        instr_infos = instr_list[instr_addr]
+        ptr = None
+
+        if len(instr_infos) > 1:
+            infos = instr_infos[1]
+
+            if infos['name'] == 'bl':
+                sub_func.append(infos['dst_addr'])
+
+            if infos['name'] == 'add_imm':
+                if infos['reg_src'] in regs:
+                    regs[infos['reg_dst']] = regs[infos['reg_src']] + infos['imm']
+                    ptr = regs[infos['reg_dst']]
+
+            if infos['name'] == 'adrp':
+                regs[infos['reg_dst']] = infos['value']
+
+        if ptr is not None:
+            flink = get_sizet_from_va(ptr)
+            if flink is None:
+                continue
+            if cbStructDetection is not None:
+                is_struct = cbStructDetection(ptr)
+                if is_struct:
+                    return ptr
+                else:
+                    continue
+            if bitness == 64:
+                blink = get_qword_from_va(flink+8)
+            else:
+                blink = get_dword_from_va(flink+4)
+            if flink is None:
+                continue
+            if flink is not None and blink == ptr:
+                return ptr
+
+    if len(instr_list) < 0x20 and not no_recursive:
+        for cfunc in sub_func:
+            result = identify_list_entry_from_code("0x%x" % cfunc, cbStructDetection, no_recursive=True)
+            if result is not None:
+                return result
+
+    return
+
+
+def identify_list_entry_from_code_x8664(symbol, cbStructDetection=None, no_recursive=False):
+    global bitness
     disas = lde.LDE(bitness)
     from_addr = resolve_symbol(symbol)
     if from_addr is None:
@@ -3858,10 +4300,11 @@ def identify_list_entry_from_code(symbol, cbStructDetection=None, no_recursive=F
     return
 
 
-def identify_CiOptions(cbStructDetection=None, no_recursive=False):
+def identify_CiOptions(no_recursive=False):
     global bitness
-    import lde
 
+    if cpu == "aarch64":
+        return identify_CiOptions_aarch64(no_recursive)
     disas = lde.LDE(bitness)
     from_addr = resolve_symbol("ci!CiInitialize")
     if from_addr is None:
@@ -3890,6 +4333,52 @@ def identify_CiOptions(cbStructDetection=None, no_recursive=False):
                 address_CiOptions = cfunc + pattern_offset + 6 + struct.unpack("i", heades_func[pattern_offset+2:pattern_offset+6])[0]
                 return address_CiOptions
     return
+
+
+def get_globals_from_code_aarch64(address, sub_funcs=True):
+    disas = lde.LDE(bitness)
+
+    instr_list = disas.get_function_instructions(address, get_va_memory, 80)
+    instr_list_addr = list(instr_list.keys())
+    instr_list_addr.sort()
+    regs = {}
+    for cinstr_addr in instr_list_addr:
+        cinstr = instr_list[cinstr_addr]
+        if len(cinstr) > 1:
+            cinstr_infos = cinstr[1]
+            if sub_funcs and cinstr_infos['name'] == 'bl':
+                for sub_global in get_globals_from_code_aarch64(cinstr_infos['dst_addr'], False):
+                    if sub_global is not None:
+                        yield sub_global
+            if cinstr_infos['name'] == 'adrp':
+                regs[cinstr_infos['reg_dst']] = cinstr_infos['value']
+            if cinstr_infos['name'] == 'ldr_lit':
+                regs[cinstr_infos['reg_dst']] = cinstr_infos['imm']
+            if cinstr_infos['name'] == 'add_imm' and cinstr_infos['reg_src'] in regs:
+                regs[cinstr_infos['reg_dst']] = regs[cinstr_infos['reg_src']] + cinstr_infos['imm']
+            if cinstr_infos['name'] == 'ldr_imm' and cinstr_infos['reg_src'] in regs:
+                regs[cinstr_infos['reg_dst']] = regs[cinstr_infos['reg_src']] + cinstr_infos['imm']
+            if cinstr_infos['name'] == 'ldr_imm' and 'reg_dst' in cinstr_infos and cinstr_infos['reg_dst'] in regs:
+                cur_ptr = regs[cinstr_infos['reg_dst']]
+                if (cur_ptr >> 48) == 0xffff and (cur_ptr & 3) == 0:
+                    qptr = get_qword_from_va(cur_ptr)
+                    if qptr is not None:
+                        yield cur_ptr
+
+
+def identify_CiOptions_aarch64(no_recursive=False):
+    global bitness
+
+    from_addr = resolve_symbol("ci!CiInitialize")
+    if from_addr is None:
+        return
+
+    for csub in get_globals_from_code_aarch64(from_addr):
+        qptr = get_qword_from_va(csub)
+        if qptr is not None and qptr < 0x80:
+            address_CiOptions = csub
+            return address_CiOptions
+    return None
 
 
 def detect_ndisCbIoList(address):
@@ -4172,7 +4661,7 @@ def get_driver_section(driver_name, section_name):
     if 'PE' in Drivers_list[drv_addr]:
         for csection in Drivers_list[drv_addr]['PE']['Sections']:
             if csection['name'] == section_name:
-                size = csection['virtual_size']-(csection['virtual_size'] % 8)
+                size = csection['virtual_size']-(csection['virtual_size'] & 7)
                 dump = get_va_memory(drv_addr+csection['virtual_address'], size)
                 return dump
     return None
@@ -4185,8 +4674,28 @@ def is_ascii(datas):
     return True
 
 
+def validate_big_pool_format(address):
+    dump = get_va_memory(address, 0x40)
+    if dump is None or len(dump) != 0x40:
+        return None
+    sdump = struct.unpack('Q'*8, dump)
+    if (sdump[0] & 0xffe) != 0:
+        return None
+    if get_va_memory(sdump[0] & 0xfffffffffffffffe, 0x40) is None:
+        return None
+    if sdump[2] < 0x1000 or sdump[2] > 0x1000000:
+        return None
+    if sdump[3] == 0:
+        if sdump[4] == 1 or (sdump[4] >> 48) == 0xffff:
+            return 2
+    if sdump[3] == 1 or (sdump[3] >> 48) == 0xffff:
+        return 1
+    return None
+
+
 def find_poolbigpagetable():
     global pPoolBigPageTable
+    global pPoolBigPageTable_type
 
     if pPoolBigPageTable == []:
         return None
@@ -4195,38 +4704,25 @@ def find_poolbigpagetable():
         dump = get_driver_section(b"nt", b".data")
         if dump is None:
             return None
-        size = len(dump)-(len(dump) % 8)
-        sdump = struct.unpack('Q'*(size >> 3), dump)
-        for i in range(0, len(sdump)-1):
+        size = len(dump)-(len(dump) & 7)
+        sdump = struct.unpack('Q'*(size >> 3), dump[:size])
+        for i in range(0, len(sdump)):
             sub_addr = sdump[i]
             if (sub_addr & 0xffff800000000000) != 0xffff800000000000 or (sub_addr & 0xfff) != 0:
                 continue
             sub_dump = get_va_memory(sub_addr, 0x1000)
             if sub_dump is None or len(sub_dump) != 0x1000:
                 continue
-            is_CM16 = sub_dump.find(b"CM16")
-            is_CM17 = sub_dump.find(b"CM17")
-            is_CM31 = sub_dump.find(b"CM31")
-            is_CM25 = sub_dump.find(b"CM25")
-            is_MmSt = sub_dump.find(b"MmSt")
-            is_MmAc = sub_dump.find(b"MmAc")
-            is_ArbA = sub_dump.find(b"ArbA")
-            is_found = 0
 
-            if is_ArbA >= 0 and (is_ArbA % 0x18) == 8:
-                is_found += 1
-            if is_MmAc >= 0 and (is_MmAc % 0x18) == 8:
-                is_found += 1
-            if is_CM16 >= 0 and (is_CM16 % 0x18) == 8:
-                is_found += 1
-            if is_CM17 >= 0 and (is_CM17 % 0x18) == 8:
-                is_found += 1
-            if is_CM31 >= 0 and (is_CM31 % 0x18) == 8:
-                is_found += 1
-            if is_CM25 >= 0 and (is_CM25 % 0x18) == 8:
-                is_found += 1
-            if is_MmSt >= 0 and (is_MmSt % 0x18) == 8:
-                is_found += 1
+            pool_tags_list = [b'CM16', b'CM17', b'CM31', b'CM25', b'MmSt', b'MmAc', b'ArbA']
+
+            is_found = 0
+            for ctag in pool_tags_list:
+                match_addr = sub_dump.find(b"\xff\xff"+ctag)
+                validate = validate_big_pool_format(sub_addr+match_addr-6)
+                if validate is not None:
+                    pPoolBigPageTable_type = validate
+                    is_found += sub_dump.count(b"\xff\xff"+ctag)
 
             if is_found >= 1:
                 pPoolBigPageTable.append(sub_addr)
@@ -4242,11 +4738,13 @@ def get_poolbigpagetable_from_tag(tag_to_find):
     find_poolbigpagetable()
     if pPoolBigPageTable == []:
         return None
-    if pPoolBigPageTable == []:
-        return None
     for cPoolBigPageTable in pPoolBigPageTable:
         cpage = 0
         dump = get_va_memory(cPoolBigPageTable, 0xff0)
+        if pPoolBigPageTable_type == 1:
+            chunk_size = 0x18
+        if pPoolBigPageTable_type == 2:
+            chunk_size = 0x20
         while dump is not None:
             i = 0
             while i < len(dump):
@@ -4254,12 +4752,12 @@ def get_poolbigpagetable_from_tag(tag_to_find):
                 tag = dump[i+8:i+0xc]
                 pooltype = struct.unpack('I', dump[i+0xc:i+0x10])[0]
                 if (addr_pool & 0xfff) != 0 or (addr_pool != 0 and (addr_pool & 0xffff800000000000) != 0xffff800000000000):
-                    i += 0x18
+                    i += chunk_size
                     continue
                 if tag == tag_to_find:
                     pool_size = struct.unpack('Q', dump[i+0x10:i+0x18])[0]
                     addresses.append({'address': addr_pool, 'tag': tag, 'size': pool_size, 'type': pooltype})
-                i += 0x18
+                i += chunk_size
             cpage += 0xff0
             dump = get_va_memory(cPoolBigPageTable+cpage, 0xff0)
     return addresses
@@ -5450,7 +5948,7 @@ def align_64(num):
     return (num & 0xffffffffffffffff)
 
 
-def find_kiWaitNever_kiWaitAlways():
+def find_kiWaitNever_kiWaitAlways_aarch64():
     global kiWaitNever
     global kiWaitAlways
     global debug
@@ -5463,7 +5961,62 @@ def find_kiWaitNever_kiWaitAlways():
     if keSetTimerEx is None:
         print("  [!] Can't resolve nt!KeSetTimerEx")
         return False
-    import lde
+
+    regs = {}
+
+    disas = lde.LDE(bitness)
+    instr_list = disas.get_function_instructions(keSetTimerEx, get_va_memory, 80)
+    if len(instr_list) < 50:
+        sub_func = None
+        for caddr in instr_list:
+            if len(instr_list[caddr]) > 1 and instr_list[caddr][1]['name'] == 'bl':
+                sub_func = instr_list[caddr][1]['dst_addr']
+                break
+        if sub_func is None:
+            print("  [!] Can't reverse nt!KeSetTimerEx")
+            return False
+        instr_list = disas.get_function_instructions(sub_func, get_va_memory, 80)
+        instr_list_addr = list(instr_list.keys())
+        instr_list_addr.sort()
+        for cinstr_addr in instr_list_addr:
+            cinstr = instr_list[cinstr_addr]
+            if len(cinstr) > 1:
+                cinstr_infos = cinstr[1]
+                if cinstr_infos['name'] == 'adrp':
+                    regs[cinstr_infos['reg_dst']] = cinstr_infos['value']
+                if cinstr_infos['name'] == 'ldr_lit':
+                    regs[cinstr_infos['reg_dst']] = cinstr_infos['imm']
+                if cinstr_infos['name'] == 'add_imm' and cinstr_infos['reg_src'] in regs:
+                    regs[cinstr_infos['reg_dst']] = regs[cinstr_infos['reg_src']] + cinstr_infos['imm']
+                if cinstr_infos['name'] == 'ldr_imm' and cinstr_infos['reg_src'] in regs:
+                    regs[cinstr_infos['reg_dst']] = regs[cinstr_infos['reg_src']] + cinstr_infos['imm']
+                if cinstr_infos['name'] == 'ldr_imm' and 'reg_dst' in cinstr_infos and cinstr_infos['reg_dst'] in regs:
+                    cur_ptr = regs[cinstr_infos['reg_dst']]
+                    if (cur_ptr >> 48) == 0xffff and (cur_ptr & 7) == 0 and (cur_ptr & 0xfff) != 0:
+                        qptr = get_qword_from_va(cur_ptr)
+                        if qptr is not None and (qptr >> 48) not in [0, 0xffff]:
+                            if kiWaitAlways is None:
+                                kiWaitAlways = qptr
+                            elif kiWaitNever is None:
+                                kiWaitNever = qptr
+                                return
+
+
+def find_kiWaitNever_kiWaitAlways():
+    global kiWaitNever
+    global kiWaitAlways
+    global debug
+    global bitness
+
+    if kiWaitNever is not None and kiWaitAlways is not None:
+        return True
+
+    if cpu == "aarch64":
+        return find_kiWaitNever_kiWaitAlways_aarch64()
+    keSetTimerEx = resolve_symbol("nt!KeSetTimerEx")
+    if keSetTimerEx is None:
+        print("  [!] Can't resolve nt!KeSetTimerEx")
+        return False
     disas = lde.LDE(bitness)
     instr_list = disas.get_function_instructions(keSetTimerEx, get_va_memory, 80)
     if len(instr_list) < 50:
@@ -5641,12 +6194,23 @@ def find_KPRCB():
         sub_addr = sdump[i]
         if not is_kernel_space(sub_addr, 8):
             continue
-        dword_ptr = get_dword_from_va(sub_addr)
-        if dword_ptr == 0x1f80:
-            if debug > 0:
-                print("Found _KPRCB: %x" % sub_addr)
-            if not (sub_addr in kprcb_list):
-                kprcb_list[sub_addr] = None
+        if cpu == "x8664":
+            dword_ptr = get_dword_from_va(sub_addr)
+            if dword_ptr == 0x1f80:
+                if debug > 0:
+                    print("Found _KPRCB: %x" % sub_addr)
+                if not (sub_addr in kprcb_list):
+                    kprcb_list[sub_addr] = None
+        elif cpu == "aarch64":
+            subsub_addr = get_qword_from_va(sub_addr+8)
+            if subsub_addr is None or not is_kernel_space(subsub_addr, 8):
+                continue
+            dword_ptr = get_dword_from_va(subsub_addr)
+            if (dword_ptr & 0xfffff) == 0x6:
+                if debug > 0:
+                    print("Found _KPRCB: %x" % sub_addr)
+                if not (sub_addr in kprcb_list):
+                    kprcb_list[sub_addr] = None
 
 
 def reconstruct_idt_entry(idt_entry_data):
@@ -5723,7 +6287,26 @@ def is_pg_in_dpc(address):
     return is_pg_active
 
 
+def is_CiValidateImageHeader_aarch64(CiValidateImageHeader_addr):
+    datas = get_va_memory(CiValidateImageHeader_addr, 0x2000)
+
+    eof = datas.find(b'\xc0\x03\x5f\xd6')  # find a "ret"
+    if eof > 0:
+        datas = datas[:eof]
+
+    if len(datas) < 900:
+        return False
+
+    if datas.count(b"\x1f\x12") > 0 and datas.count(b"\x00\xf1") > 0:
+        return True
+
+    return False
+
+
 def is_CiValidateImageHeader(CiValidateImageHeader_addr):
+    if cpu == "aarch64":
+        return is_CiValidateImageHeader_aarch64(CiValidateImageHeader_addr)
+
     datas = get_va_memory(CiValidateImageHeader_addr, 0x2000)
 
     eof = datas.find(b'\xcc\xcc\xcc')
@@ -5747,7 +6330,23 @@ def is_CiValidateImageHeader(CiValidateImageHeader_addr):
     return False
 
 
+def is_CiValidateImageData_aarch64(CiValidateImageHeader_addr):
+    datas = get_va_memory(CiValidateImageHeader_addr, 0x2000)
+
+    eof = datas.find(b'\xc0\x03\x5f\xd6')  # find a "ret"
+    if eof > 0:
+        datas = datas[:eof]
+
+    if 100 < len(datas) < 900:
+        return True
+
+    return False
+
+
 def is_CiValidateImageData(CiValidateImageHeader_addr):
+    if cpu == "aarch64":
+        return is_CiValidateImageData_aarch64(CiValidateImageHeader_addr)
+
     datas = get_va_memory(CiValidateImageHeader_addr, 0x2000)
 
     if datas is None:
@@ -5816,7 +6415,10 @@ def check_CI_checks_cb():
     elif 'CiValidateImageData' not in ci_functions:
         print('[!] CiValidateImageData not found in Nt! DSE fix? ***** SUSPICIOUS *****')
 
-    repattern_SeValidateImageData = [re.compile(b"\x48\x8B\x05....\x4C\x8B\xD1\x48\x85\xC0\x74"), re.compile(b"\x4C\x8B\x0D....\x4C\x3B\xC8")]  # Win10,Win7
+    if cpu == "aarch64":
+        repattern_SeValidateImageData = [re.compile(b"\x00[\x90\xb0\xd0\xf0]\x08..\xf9..\x00\xb4.{8,256}\\\x28\x04\x00\xc0")]  # Win11
+    else:
+        repattern_SeValidateImageData = [re.compile(b"\x48\x8B\x05....\x4C\x8B\xD1\x48\x85\xC0\x74"), re.compile(b"\x4C\x8B\x0D....\x4C\x3B\xC8")]  # Win10,Win7
 
     seValidateImageHeader_callback_addr = None
     seValidateImageData_callback_addr = None
@@ -5830,16 +6432,27 @@ def check_CI_checks_cb():
         return
 
     page_section_address = get_section_address(b'nt', b'PAGE')
+    rel_addr = None
     for cpattern in repattern_SeValidateImageData:
         for cmatch in cpattern.finditer(dump_page):
             offset_SeValidateImageData = cmatch.span()[0]
-            rel_addr = raw_to_int(dump_page[offset_SeValidateImageData+3:offset_SeValidateImageData+3+4])
-            if (rel_addr & 0x80000000) != 0:
-                rel_addr = -(0x100000000-rel_addr)
-            seValidateImageHeader_callback_addr = (page_section_address+offset_SeValidateImageData+7+rel_addr)-8
-            seValidateImageHeader_callback_ptr = get_qword_from_va(seValidateImageHeader_callback_addr)
-            seValidateImageData_callback_addr = page_section_address+offset_SeValidateImageData+7+rel_addr
-            seValidateImageData_callback_ptr = get_qword_from_va(seValidateImageData_callback_addr)
+            if cpu == "aarch64":
+                for cglob in get_globals_from_code_aarch64(page_section_address+offset_SeValidateImageData-2, False):
+                    rel_addr = cglob
+                seValidateImageHeader_callback_addr = rel_addr-8
+                seValidateImageHeader_callback_ptr = get_qword_from_va(seValidateImageHeader_callback_addr)
+                seValidateImageData_callback_addr = rel_addr
+                seValidateImageData_callback_ptr = get_qword_from_va(seValidateImageData_callback_addr)
+            else:
+                rel_addr = raw_to_int(dump_page[offset_SeValidateImageData+3:offset_SeValidateImageData+3+4])
+                if (rel_addr & 0x80000000) != 0:
+                    rel_addr = -(0x100000000-rel_addr)
+                seValidateImageHeader_callback_addr = (page_section_address+offset_SeValidateImageData+7+rel_addr)-8
+                seValidateImageHeader_callback_ptr = get_qword_from_va(seValidateImageHeader_callback_addr)
+                seValidateImageData_callback_addr = page_section_address+offset_SeValidateImageData+7+rel_addr
+                seValidateImageData_callback_ptr = get_qword_from_va(seValidateImageData_callback_addr)
+            if seValidateImageData_callback_ptr is None:
+                break
             if debug > 0:
                 print('  SeValidateImageData callback : 0x%x' % (seValidateImageData_callback_ptr))
             break
@@ -5854,10 +6467,12 @@ def check_CI_checks_cb():
             print("[!] No driver found for the callback SeValidateImageData: 0x%x ***** SUSPICIOUS *****" % (seValidateImageData_callback_ptr))
         elif found_driver.decode().lower().endswith(r'\systemroot\system32\ci.dll'):
             cb_SeValidateImageData = get_va_memory(seValidateImageData_callback_ptr, 2)
-            if cb_SeValidateImageData != b"\x48\x89":
-                print("[!] Callback SeValidateImageData is patched at 0x%x ***** SUSPICIOUS *****" % (seValidateImageData_callback_ptr))
-            else:
+            if cpu == "aarch64" and cb_SeValidateImageData == b"\x7f\x23":
                 print("[*] SeValidateImageData OK")
+            elif cb_SeValidateImageData == b"\x48\x89":
+                print("[*] SeValidateImageData OK")
+            else:
+                print("[!] Callback SeValidateImageData is patched at 0x%x ***** SUSPICIOUS *****" % (seValidateImageData_callback_ptr))
                 seValidateImageData_callback = seValidateImageData_callback_ptr
             if 'CiValidateImageHeader' in ci_functions and ci_functions['CiValidateImageHeader'] == seValidateImageHeader_callback_ptr:
                 print("[*] SeValidateImageHeader OK")
@@ -6846,6 +7461,7 @@ is_current_CR3_valid()
 help_str = "  all : perform all checks\n"
 help_str = "  ci : check if some drivers codes are modified (for file dump use \"offline 1\" command to download them from MS)\n"
 help_str += "  fpg : Find if PatchGuard and check if it's running\n"
+help_str += "  cdev : check a device or principal devices\n"
 help_str += "  cirp : check IRP table of all drivers\n"
 help_str += "  cio : check IRP table of PnP devices\n"
 help_str += "  cci : check g_CiOptions state and CI DSE callbacks\n"
@@ -6856,6 +7472,7 @@ help_str += "  cktypes : check kernel types callbacks\n"
 help_str += "  cfltmgr : check FltMgr callbacks\n"
 help_str += "  ctimer : check DPC timers\n"
 help_str += "  cidt : check IDT entries\n"
+help_str += "  creg : check Registry callbacks\n"
 help_str += "  pe : check kernel memory to find hidden drivers\n"
 help_str += "  drv_stack : display stacks devices to go to the driver\n"
 help_str += "  filecache : Find Vacbs and crawl PFN to identify files mapped\n"
@@ -6907,7 +7524,7 @@ while True:
         gdb_connect()
     try:
         commands = ";"+commands+";"
-        commands = commands.replace(';all;', ';print Check : cidt;cidt;print Check : cirp;cirp;print Check : cdev;cdev;print Check : ccb;ccb;print Check : cktypes;cktypes;print Check : cio;cio;print Check : cndis;cndis;print Check : cnetio;cnetio;print Check : cfltmgr;cfltmgr;print Check : ctimer;ctimer;print Check : fpg;fpg;print Check : ci;ci;print Check : cci;cci;print Check : pe;pe;')
+        commands = commands.replace(';all;', ';print Check : cidt;cidt;print Check : cirp;cirp;print Check : cdev;cdev;print Check : ccb;ccb;print Check : cktypes;cktypes;print Check : cio;cio;print Check : cndis;cndis;print Check : cnetio;cnetio;print Check : cfltmgr;cfltmgr;print Check : creg;creg;print Check : ctimer;ctimer;print Check : fpg;fpg;print Check : ci;ci;print Check : cci;cci;print Check : pe;pe;')
         commands = commands.split(";")
         while '' in commands:
             commands.remove('')
@@ -7236,7 +7853,6 @@ while True:
                 if len(args) > 2:
                     max_instr = int(args[2])
                 if sym_resolve is not None:
-                    import lde
                     start_address = sym_resolve
                     disas = lde.LDE(bitness)
                     instr_list = disas.get_function_instructions(sym_resolve, get_va_memory, max_instr)
@@ -7414,6 +8030,8 @@ while True:
                     check_sensitives_devices()
             elif args[0] == "cidt":
                 check_idt()
+            elif args[0] == "cpiddb":
+                check_PiDDBCache()
             elif args[0] == "cdrv":
                 devs = get_obj_list("\\")
                 if len(args) > 1:
@@ -7494,7 +8112,7 @@ while True:
                         print("                 %s  (%x)" % (dev_obj, devs[dev_obj]['Object']))
             elif args[0] == "o2p":
                 addr = int(args[1], 16)
-                print("Physical address : 0x%X" % (get_phys_from_file_offset(addr)))
+                print("Physical address : 0x%X" % (get_phys_from_file_offset(addr)+(addr & 0xfff)))
             elif args[0] == "p2v":
                 addr = int(args[1], 16)
                 vaddr = get_va_from_phys(addr)
@@ -7507,7 +8125,7 @@ while True:
                 paddr = get_phys_from_file_offset(oaddr)
                 vaddr = get_va_from_phys(paddr)
                 if vaddr is not None:
-                    print("Virtual address : 0x%X" % (vaddr))
+                    print("Virtual address : 0x%X" % (vaddr+(oaddr & 0xfff)))
                 else:
                     print("Page not mapped")
             elif args[0] == "offline":

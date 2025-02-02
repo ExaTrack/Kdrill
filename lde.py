@@ -571,7 +571,7 @@ class LDE():
             if caddress is None:
                 continue
             datas = cb_read(caddress, 0x10)
-            if datas is None or len(datas) < 1 or datas == b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00":
+            if datas is None or len(datas) < 1 or datas.startswith(b"\x00\x00\x00\x00"):
                 continue
             try:
                 instr_size, instr_name = self.decode_instr(datas, extended_decode)
@@ -611,14 +611,24 @@ class LDE():
                 elif instr_name.startswith('call_ptr'):
                     ptr = caddress+instr_size+struct.unpack('i', datas[instr_size-4:instr_size])[0]
                     if self.cpu_base == 64:
-                        ptr_datas = cb_read(caddress+instr_size+ptr, 8)
+                        ptr_datas = cb_read(ptr, 8)
                     else:
                         ptr_datas = datas[2:6]
                     if ptr_datas is not None:
                         if self.cpu_base == 64:
                             ptr = struct.unpack('Q', ptr_datas)[0]
+                            instr_list[caddress].append(ptr)
+                            ptr_datas = cb_read(ptr, 8)
+                            if ptr_datas and len(ptr_datas) == 8:
+                                ptr = struct.unpack('Q', ptr_datas)[0]
+                            else:
+                                ptr = None
                         else:
                             ptr = struct.unpack('I', ptr_datas)[0]
+                            instr_list[caddress].append(ptr)
+                    else:
+                        instr_list[caddress].append(ptr)
+                        ptr = None
                     instr_list[caddress].append(ptr)
                 elif instr_name.startswith('jmp_ptr'):
                     if self.cpu_base == 64:
