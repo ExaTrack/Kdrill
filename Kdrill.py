@@ -16,7 +16,9 @@ import socket
 import ms_infos
 
 
-ctypes.windll.kernel32.Wow64DisableWow64FsRedirection(ctypes.byref(ctypes.c_long()))
+if 'ctypes' in dir(ctypes):
+    ctypes.windll.kernel32.Wow64DisableWow64FsRedirection(ctypes.byref(ctypes.c_long()))
+
 
 bitness = 64
 cpu = 'x8664'
@@ -1171,13 +1173,52 @@ def set_infos_from_aff4_dump(fileDump):
         print("[!] Winpmem header is malformed")
 
 
-def set_infos_from_raw_dump(fileDump):
+def set_infos_from_vmem_dump(fileDump):
+    global phys_to_file
+    vmss_header = open(fileDmp[:-4]+"vmss", 'rb').read(0x80000)  # should be enough
+    start_offset = vmss_header.find(b"regionsCount")
+    if start_offset > 0:
+        phys_to_file = []
+        phys_areas_count = struct.unpack('I', vmss_header[start_offset+0xc:start_offset+0x10])[0]
+        current_count = 0
+        vmem_offset = 0
+        if phys_areas_count == 0:
+            phys_to_file = [[0, os.stat(fileDump).st_size, 0]]
+            set_infos_from_raw_dump(fileDump, phys_to_file_to_init=False)
+            return None
+
+        while current_count < phys_areas_count:
+            regionPPN = vmss_header.find(b"regionPPN", start_offset+0xc)
+            if regionPPN < start_offset:
+                print("[!] .vmss struct is not supported :( (no regionPPN)")
+                phys_to_file = [[0, os.stat(fileDump).st_size, 0]]
+                return None
+            regionSize = vmss_header.find(b"regionSize", start_offset+0xc)
+            if regionSize < start_offset:
+                print("[!] .vmss struct is not supported :( (no regionSize)")
+                phys_to_file = [[0, os.stat(fileDump).st_size, 0]]
+                return None
+            phys_addr = struct.unpack('I', vmss_header[regionPPN+0xd:regionPPN+0x11])[0] << 12
+            phys_size = struct.unpack('I', vmss_header[regionSize+0xe:regionSize+0x12])[0] << 12
+            phys_to_file.append([phys_addr, phys_size, vmem_offset])
+            vmem_offset += phys_size
+            current_count += 1
+            start_offset = regionSize+0x12
+    else:
+        print("[!] .vmss struct is not supported :( (no regionsCount)")
+        phys_to_file = [[0, os.stat(fileDump).st_size, 0]]
+        return None
+    set_infos_from_raw_dump(fileDump, phys_to_file_to_init=False)
+
+
+def set_infos_from_raw_dump(fileDump, phys_to_file_to_init=True):
     global readFromFile
     global phys_to_file
     global Drivers_list
     global psLoadedModuleList
 
-    phys_to_file = [[0, os.stat(fileDump).st_size, 0]]
+    if phys_to_file_to_init:
+        phys_to_file = [[0, os.stat(fileDump).st_size, 0]]
 
     global lde
     import lde
@@ -1193,7 +1234,7 @@ def set_infos_from_raw_dump(fileDump):
         else:
             Drivers_list = {}
             if ntoskrnl_base > 0:
-                decode_pe(ntoskrnl_base)
+                decode_pe(ntoskrnl_base, b'\\SystemRoot\\system32\\ntoskrnl.exe')
                 if ntoskrnl_base in Drivers_list and 'PE' in Drivers_list[ntoskrnl_base] and 'EAT' in Drivers_list[ntoskrnl_base]['PE']:
                     if b'PsLoadedModuleList' in Drivers_list[ntoskrnl_base]['PE']['EAT']:
                         psLoadedModuleList = Drivers_list[ntoskrnl_base]['PE']['EAT'][b'PsLoadedModuleList']
@@ -2294,7 +2335,8 @@ def find_valid_cr3(form_phys_addr=0):
                 continue
             potential_PXE_0 = struct.unpack('Q', rawdata[0:8])[0]
             potential_PXE_fff = struct.unpack('Q', rawdata[0xff8:0x1000])[0]
-            if (potential_PXE_0 & 0xfdf) == 0x847 and (potential_PXE_fff & 0xfff) == 0x63:
+
+            if potential_PXE_0 is not None and potential_PXE_fff is not None and (potential_PXE_0 & 0xfdf) == 0x847 and (potential_PXE_fff & 0xfff) == 0x63:
                 for i in range(0x100):
                     if (struct.unpack('Q', rawdata[0x800+(i << 3):0x800+8+(i << 3)])[0] & 0x0000fffffffff000) == cpage_address:
                         cr3 = cpage_address
@@ -2872,6 +2914,11 @@ def find_driver_list(start_from_offset=0, start_kernel_va=0xffff800000000000, st
         driver_entry_struct = detect_driver_entry_struct(ntoskrnl_flink_addr, trusted_struct=True)
         if driver_entry_struct is not None:
             return driver_entry_struct
+        else:
+            ntoskrnl_blink_addr = get_sizet_from_va(psLoadedModuleList+8)
+            driver_entry_struct = detect_driver_entry_struct(ntoskrnl_blink_addr, trusted_struct=True)
+            if driver_entry_struct is not None:
+                return driver_entry_struct
 
     if is_live:
         return None
@@ -2928,19 +2975,22 @@ def get_driver_infos_from_flink_address(driver_flink_va):
     return driver
 
 
-def get_drivers_list(force=False):
+def get_drivers_list():
     global Driver_list_Struct
     global Drivers_list_addr
     global Drivers_list
     global modules_eat
     global bitness
 
-    if not force and Drivers_list is not None and len(Drivers_list) > 0:
+    if Drivers_list is not None and len(Drivers_list) > 1:
         return Drivers_list
 
     cdrivers_list = {}
     if Drivers_list is None:
         Drivers_list = {}
+
+    if Drivers_list_addr is None and psLoadedModuleList is not None:
+        Drivers_list_addr = psLoadedModuleList
 
     if Drivers_list_addr is None or Driver_list_Struct is None:
         if find_driver_list() is None:
@@ -2948,6 +2998,7 @@ def get_drivers_list(force=False):
 
     flink = Drivers_list_addr
     drivers_parsed = []
+    Drivers_list = {}
     while not (flink in drivers_parsed) and flink is not None:
         curr_driver = get_driver_infos_from_flink_address(flink)
         if curr_driver is None:
@@ -2969,6 +3020,8 @@ def get_drivers_list(force=False):
     drivers_parsed = []
     to_update_drivers = {}
     for cimagebase in Drivers_list:
+        if "Blink" not in Drivers_list[cimagebase]:
+            continue
         blink = Drivers_list[cimagebase]["Blink"]
         while not (blink in drivers_parsed) and blink is not None:
             curr_driver = get_driver_infos_from_flink_address(blink)
@@ -3136,7 +3189,7 @@ def pe_decode_eat_header(datas):
     return result
 
 
-def decode_pe(image_base):
+def decode_pe(image_base, known_drv_name=None):
     global modules_eat
     global Drivers_list
 
@@ -3171,7 +3224,10 @@ def decode_pe(image_base):
                 eat[bytes(ceat_func_str)] = image_base+ceat_func
             if image_base in Drivers_list:
                 if 'Name' not in Drivers_list[image_base]:
-                    Drivers_list[image_base]['Name'] = b"???"
+                    if known_drv_name is not None:
+                        Drivers_list[image_base]['Name'] = known_drv_name
+                    else:
+                        Drivers_list[image_base]['Name'] = b"???"
                     Drivers_list[image_base]['PE']['EAT'] = eat
                 else:
                     drv_name = b'.'.join([bytes(a) for a in Drivers_list[image_base]['Name'].split(b"\\")[-1].split(b'.')[:-1]])
@@ -3921,15 +3977,15 @@ def check_driver_IRP_table(drv_obj):
     if drv_name is not None:
         drv_name = drv_name.split(b"\\")[-1]
     else:
-        drv_name = "*Unkown*"
+        drv_name = b"*Unkown*"
     print("    Driver : %s" % (drv_name.decode()))
     target_name = get_driver_name_from_address(drv_obj['DriverUnload'])
     if target_name is not None:
         target_name_long = get_driver_name(target_name).lower()
         target_name = target_name.split(b"\\")[-1]
     else:
-        target_name = "*Unkown*"
-        target_name_long = "*Unkown*"
+        target_name = b"*Unkown*"
+        target_name_long = b"*Unkown*"
 
     if drv_obj['DriverUnload'] != 0:
         if not is_in_ms_list(target_name_long) and (target_name_long != drv_path):
@@ -3942,8 +3998,8 @@ def check_driver_IRP_table(drv_obj):
         target_name_long = get_driver_name(target_name).lower()
         target_name = target_name.split(b"\\")[-1]
     else:
-        target_name = "*Unkown*"
-        target_name_long = "*Unkown*"
+        target_name = b"*Unkown*"
+        target_name_long = b"*Unkown*"
 
     if drv_obj['DriverStartIo'] != 0:
         if not is_in_ms_list(target_name_long) and (target_name_long != drv_path):
@@ -3956,8 +4012,8 @@ def check_driver_IRP_table(drv_obj):
         target_name_long = get_driver_name(target_name).lower()
         target_name = target_name.split(b"\\")[-1]
     else:
-        target_name = "*Unkown*"
-        target_name_long = "*Unkown*"
+        target_name = b"*Unkown*"
+        target_name_long = b"*Unkown*"
 
     if drv_obj['DriverInit'] != 0:
         if not is_in_ms_list(target_name_long) and (target_name_long != drv_path):
@@ -3973,8 +4029,8 @@ def check_driver_IRP_table(drv_obj):
             target_name_long = get_driver_name(target_name).lower()
             target_name = target_name.split(b"\\")[-1]
         else:
-            target_name = "*Unkown*"
-            target_name_long = "*Unkown*"
+            target_name = b"*Unkown*"
+            target_name_long = b"*Unkown*"
 
         if not is_in_ms_list(target_name_long) and (target_name_long == drv_path) and not own_irp:
             print("             ***SUSPICIOUS*** IRP_MJ Not in MS list : %s" % (target_name_long.decode()))
@@ -7397,7 +7453,19 @@ while (curr_opt < len(sys.argv)):
 if dev_handle is None and not is_gdb:
     file_fd = open(fileDmp, "rb")
     rawdata = file_fd.read(0x4000)
-    if rawdata[:8] in [b"PAGEDUMP", b"PAGEDU64"]:
+    if fileDmp.lower().endswith(".vmem"):
+        vmss_found = False
+        try:
+            os.stat(fileDmp[:-4]+"vmss")
+            vmss_found = True
+        except Exception:
+            print("[!] No .vmss file found, try to analyze like a raw dump")
+
+        if vmss_found:
+            set_infos_from_vmem_dump(fileDmp)
+        else:
+            set_infos_from_raw_dump(fileDmp)
+    elif rawdata[:8] in [b"PAGEDUMP", b"PAGEDU64"]:
         rawdata = readFromFile(0, 0x4000)
         set_infos_from_crashdump_header(rawdata)
     elif rawdata[:2] == b"PK":
@@ -7502,7 +7570,8 @@ else:
 try:
     get_drivers_list()
 except Exception as e:
-    import traceback; traceback.print_exc()
+    import traceback
+    traceback.print_exc()
     print(e)
     pass
 while True:
@@ -7515,7 +7584,8 @@ while True:
             commands = shell_command
             shell_command = None
     except Exception as e:
-        import traceback; traceback.print_exc()
+        import traceback
+        traceback.print_exc()
         print(e)
         sys.exit()
     if is_live:
@@ -8162,6 +8232,7 @@ while True:
             else:
                 print("Command not found :-(")
     except Exception as e:
-        import traceback; traceback.print_exc()
+        import traceback
+        traceback.print_exc()
         print(e)
         pass
