@@ -6,6 +6,7 @@ instr_name = {}
 instr_name['jcc_short'] = [[0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79, 0x7a, 0x7b, 0x7c, 0x7d, 0x7e, 0x7f]]
 instr_name['jcc_long'] = [[0x0f], [0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8a, 0x8b, 0x8c, 0x8d, 0x8e, 0x8f]]
 instr_name['ret'] = [[0xc2, 0xc3]]
+instr_name['hlt'] = [[0xf4]]
 instr_name['jmp_short'] = [[0xeb]]
 instr_name['jmp_long'] = [[0xe9]]
 instr_name['int3'] = [[0xcc]]
@@ -45,14 +46,23 @@ instr_name_ext_64['xor_same_reg_ext'] = [ext_prefix, [0x31], [0xc0, 0xdb, 0xc9, 
 instr_name_ext_64['lea_rip_plus'] = [[0x8d], [0x05, 0x0d, 0x15, 0x1d, 0x25, 0x2d, 0x35, 0x3d]]  # lea REG
 instr_name_ext_64['lea_rip_plus_ext'] = [ext_prefix, [0x8d], [0x05, 0x0d, 0x15, 0x1d, 0x25, 0x2d, 0x35, 0x3d]]  # lea REG
 
+instr_name_ext_64['mov_rip_plus'] = [[0x8b], [0x05, 0x0d, 0x15, 0x1d, 0x25, 0x2d, 0x35, 0x3d]]  # xor REG, [RIP]
+instr_name_ext_64['mov_rip_plus_ext'] = [[0x4d, 0x48], [0x8b], [0x05, 0x0d, 0x15, 0x1d, 0x25, 0x2d, 0x35, 0x3d]]  # xor REG, [RIP]
 
-instr_name_ext['mov_imm32'] = [[0xb8, 0xb9, 0xba, 0xbb, 0xbc, 0xbd, 0xbe, 0xbf, 0xc7]]
+instr_name_ext['mov_imm32'] = [[0xb8, 0xb9, 0xba, 0xbb, 0xbc, 0xbd, 0xbe, 0xbf]]
+instr_name_ext_64['mov_imm32'] = [[0xb8, 0xb9, 0xba, 0xbb, 0xbc, 0xbd, 0xbe, 0xbf]]
+instr_name_ext_64['mov_imm32_32'] = [[0x40, 0x42, 0x44, 0x46], [0xb8, 0xb9, 0xba, 0xbb, 0xbc, 0xbd, 0xbe, 0xbf]]
+instr_name_ext_64['mov_imm32_64'] = [[0x41, 0x43, 0x45, 0x47], [0xb8, 0xb9, 0xba, 0xbb, 0xbc, 0xbd, 0xbe, 0xbf]]
+instr_name_ext_64['mov_imm32_wtf'] = [[0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f], [0xb8, 0xb9, 0xba, 0xbb, 0xbc, 0xbd, 0xbe, 0xbf]]  # bug in old xed disassembler
 
 instr_name_ext['push_imm32'] = [[0x68]]
 
 instr_name_ext['add_eax_imm32'] = [[0x05]]
 
 instr_name_ext['add_imm32'] = [[0x81], [0xc0, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7]]
+
+instr_name_ext['mov_reg_imm32'] = [[0xc7], [0x00, 0x01, 0x02, 0x03, 0x04, 0x06, 0x07, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47]]
+instr_name_ext_64['mov_reg_imm32'] = [[0x48], [0xc7], [0x00, 0x01, 0x02, 0x03, 0x04, 0x06, 0x07, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47]]
 
 instr_name_ext_64['add_rsp'] = [[0x48], [0x81, 0x83], [0xc4]]
 instr_name_ext_64['pop_rbp'] = [[0x5d]]
@@ -62,6 +72,7 @@ instr_name_ext_64['pop_ext'] = [ext_prefix, [0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5d,
 instr_name_ext['jcc_short'] = [[0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79, 0x7a, 0x7b, 0x7c, 0x7d, 0x7e, 0x7f]]
 instr_name_ext['jcc_long'] = [[0x0f], [0x80, 0x81, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89, 0x8a, 0x8b, 0x8c, 0x8d, 0x8e, 0x8f]]
 instr_name_ext['ret'] = [[0xc2, 0xc3]]
+instr_name_ext['hlt'] = [[0xf4]]
 instr_name_ext['jmp_short'] = [[0xeb]]
 instr_name_ext['jmp_long'] = [[0xe9]]
 instr_name_ext['int3'] = [[0xcc]]
@@ -76,8 +87,8 @@ instr_name_ext_64['call_reg_ext'] = [ext_prefix, [0xff], [0xd0, 0xd1, 0xd2, 0xd3
 instr_name_ext['call_preg'] = [[0xff], [0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f]]
 instr_name_ext_64['call_preg_ext'] = [ext_prefix, [0xff], [0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f]]
 
-instr_name_ext['jmp_reg'] = [[0xff], [0xd0, 0xd1, 0xd2, 0xd3, 0xd4, 0xd5, 0xd6, 0xd7]]
-instr_name_ext_64['jmp_reg_ext'] = [ext_prefix, [0xff], [0xd0, 0xd1, 0xd2, 0xd3, 0xd4, 0xd5, 0xd6, 0xd7]]
+instr_name_ext['jmp_reg'] = [[0xff], [0xe0, 0xe1, 0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7]]
+instr_name_ext_64['jmp_reg_ext'] = [ext_prefix, [0xff], [0xe0, 0xe1, 0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7]]
 
 instr_name_ext['jmp_preg'] = [[0xff], [0x60, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e, 0x6f]]
 instr_name_ext_64['jmp_preg_ext'] = [ext_prefix, [0xff], [0x60, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e, 0x6f]]
@@ -114,7 +125,7 @@ class LDE():
     operand_size = 32
 
     def __init__(self, bitness):
-        self.base_opcodes = [self.f1_, self.f1_, self.f1_, self.f1_, self.f3_, self.f6_, self.f5_, self.f5_, self.f1_, self.f1_, self.f1_, self.f1_, self.f3_, self.f6_, self.f5_, self.esc_2byte, self. f1_, self.f1_, self.f1_, self.f1_, self.f3_, self.f6_, self.f5_, self.f5_, self.f1_, self.f1_, self.f1_, self.f1_, self.f3_, self.f6_, self.f5_, self.f5_, self.f1_, self.f1_, self.f1_, self.f1_, self.f3_, self.f6_, self.f12_, self.f5_, self.f1_, self.f1_, self.f1_, self.f1_, self.f3_, self.f6_, self.f12_, self.f5_, self.f1_, self.f1_, self.f1_, self.f1_, self.f3_, self.f6_, self.f12_, self.f5_, self.f1_, self.f1_, self.f1_, self.f1_, self.f3_, self.f6_, self.f12_, self.f5_, self. f11_, self.f11_, self.f11_, self.f11_, self.f11_, self.f11_, self.f11_, self.f11_, self.f10_, self.f10_, self.f10_, self.f10_, self.f10_, self.f10_, self.f10_, self.f10_, self.  f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self. f2_, self.f2_, self.f17_, self.f1_, self.f12_, self.f12_, self.prefOpSize, self. prefAdSize, self. push_Iv, self.imul_GvEvIv, self. f3_, self.f8_, self.f2_, self.f2_, self.f2_, self.f2_, self. f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self. f8_, self.g1_EvIv, self.g1_EbIb2, self.f8_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.pop_Ev, self. f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.callF_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self. f20_, self.f21_, self.f20_, self.f21_, self.f2_, self.f2_, self.f2_, self.f2_, self.f3_, self.f6_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self. f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f6_, self.f6_, self.f6_, self.f6_, self.f6_, self.f6_, self.f6_, self.f6_, self. f8_, self.f8_, self.f19_, self.f2_, self.f17_, self.f17_, self.f8_, self.f13_, self.f15_, self.f2_, self.f19_, self.f2_, self.f2_, self.f3_, self.f5_, self.f2_, self. f1_, self.f1_, self.f1_, self.f1_, self.f14_, self.f14_, self.f2_, self.f2_, self.d8_, self.d9_, self.da_, self.db_, self.dc_, self.dd_, self.de_, self.df_, self. f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f6_, self.f6_, self.jmp_far, self.f3_, self.f2_, self.f2_, self.f2_, self.f2_, self. f12_, self.f2_, self.prefREPNE, self.prefREP, self.f2_, self.f2_, self.g3_Eb, self.g3_Ev, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.g4_IncDec, self.g5_IncDec]
+        self.base_opcodes = [self.f1_, self.f1_, self.f1_, self.f1_, self.f3_, self.f6_, self.f5_, self.f5_, self.f1_, self.f1_, self.f1_, self.f1_, self.f3_, self.f6_, self.f5_, self.esc_2byte, self.f1_, self.f1_, self.f1_, self.f1_, self.f3_, self.f6_, self.f5_, self.f5_, self.f1_, self.f1_, self.f1_, self.f1_, self.f3_, self.f6_, self.f5_, self.f5_, self.f1_, self.f1_, self.f1_, self.f1_, self.f3_, self.f6_, self.f12_, self.f5_, self.f1_, self.f1_, self.f1_, self.f1_, self.f3_, self.f6_, self.f12_, self.f5_, self.f1_, self.f1_, self.f1_, self.f1_, self.f3_, self.f6_, self.f12_, self.f5_, self.f1_, self.f1_, self.f1_, self.f1_, self.f3_, self.f6_, self.f12_, self.f5_, self.f11_, self.f11_, self.f11_, self.f11_, self.f11_, self.f11_, self.f11_, self.f11_, self.f10_, self.f10_, self.f10_, self.f10_, self.f10_, self.f10_, self.f10_, self.f10_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f17_, self.f1_, self.f12_, self.f12_, self.prefOpSize, self.prefAdSize, self.push_Iv, self.imul_GvEvIv, self.f3_, self.f8_, self.f2_, self.f2_, self.f2_, self.f2_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f8_, self.g1_EvIv, self.g1_EbIb2, self.f8_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.pop_Ev, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.callF_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f20_, self.f21_, self.f20_, self.f21_, self.f2_, self.f2_, self.f2_, self.f2_, self.f3_, self.f6_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f7_, self.f7_, self.f7_, self.f7_, self.f7_, self.f7_, self.f7_, self.f7_, self.f8_, self.f8_, self.f19_, self.f2_, self.f17_, self.f17_, self.f8_, self.f13_, self.f15_, self.f2_, self.f19_, self.f2_, self.f2_, self.f3_, self.f5_, self.f2_, self.f1_, self.f1_, self.f1_, self.f1_, self.f14_, self.f14_, self.f2_, self.f2_, self.d8_, self.d9_, self.da_, self.db_, self.dc_, self.dd_, self.de_, self.df_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f3_, self.f6_, self.f6_, self.jmp_far, self.f3_, self.f2_, self.f2_, self.f2_, self.f2_, self.f12_, self.f2_, self.prefREPNE, self.prefREP, self.f2_, self.f2_, self.g3_Eb, self.g3_Ev, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.g4_IncDec, self.g5_IncDec]
         self.base_opcodes_2 = [self.g6_, self.g7_, self.f1_, self.f1_, self.echec_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.echec_, self.f2_, self.echec_, self.f1_, self.f2_, self.echec_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.g16_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f18_, self.f18_, self.f18_, self.f18_, self.echec_, self.echec_, self.echec_, self.echec_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.echec_, self.echec_, self.esc_tableA4, self.echec_, self.esc_tableA5, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f4_, self.f4_, self.f1_, self.f1_, self.f1_, self.g12_, self.g13_, self.g14_, self.f1_, self.f1_, self.f1_, self.f2_, self.f1_, self.f1_, self.echec_, self.echec_, self.f1_, self.f1_, self.f1_, self.f1_, self.f6_, self.f6_, self.f16_, self.f16_, self.f16_, self.f16_, self.f6_, self.f6_, self.f6_, self.f6_, self.f6_, self.f6_, self.f6_, self.f6_, self.f6_, self.f6_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f2_, self.f2_, self.f2_, self.f1_, self.f8_, self.f1_, self.echec_, self.echec_, self.f2_, self.f2_, self.f2_, self.f1_, self.f8_, self.f1_, self.g15_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f2_, self.g8_EvIb, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.g9_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f2_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f23_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f23_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.lddqu_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.echec_]
         self.base_opcodes_3 = [self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.f1_, self.echec_, self.echec_, self.echec_, self.echec_, self.f4_, self.echec_, self.echec_, self.echec_, self.f4_, self.f4_, self.echec_, self.f4_, self.echec_, self.echec_, self.echec_, self.echec_, self.f1_, self.f1_, self.f1_, self.echec_, self.f4_, self.f4_, self.f4_, self.f4_, self.f4_, self.f4_, self.echec_, self.echec_, self.f4_, self.f4_, self.f4_, self.f4_, self.echec_, self.echec_, self.echec_, self.echec_, self.f4_, self.f4_, self.f4_, self.f4_, self.f4_, self.f4_, self.echec_, self.f4_, self.f4_, self.f4_, self.f4_, self.f4_, self.f4_, self.f4_, self.f4_, self.f4_, self.f4_, self.f4_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.f22_, self.f22_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_]
         self.base_opcodes_4 = [self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.f4_, self.f4_, self.f4_, self.f4_, self.f4_, self.f4_, self.f4_, self.f1_, self.echec_, self.echec_, self.echec_, self.echec_, self.f4_, self.f4_, self.f4_, self.f4_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.f4_, self.f4_, self.f4_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.f4_, self.f4_, self.f4_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.f4_, self.f4_, self.f4_, self.f4_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_, self.echec_]
@@ -147,7 +158,7 @@ class LDE():
         return size
 
     def f6_(self, datas):
-        if self.operand_size >= 32:
+        if self.cpu_base == 64 or self.operand_size >= 32:
             size = 5
         else:
             size = 3
@@ -169,10 +180,11 @@ class LDE():
 
     def f10_(self, datas):
         if self.cpu_base == 64:
-            self.operand_size = 64
+            self.operand_size = 32
             size = 1
             idx = datas[1]
             size += self.base_opcodes[idx](datas[1:])
+            self.operand_size = 64
         else:
             size = 1
         return size
@@ -216,15 +228,15 @@ class LDE():
         return size
 
     def f17_(self, datas):
-        if self.cpu_base == 64:
-            size = 1
-        else:
-            size = self.f1_(datas)
+        size = self.f1_(datas)
         return size
 
     def f18_(self, datas):
-        """ To review """
-        size = 1
+        mod = self.mod_rm(datas)
+        if (mod & 3) != 3:
+            size = self.f1_(datas)
+        else:
+            size = 1
         return size
 
     def f19_(self, datas):
@@ -268,17 +280,17 @@ class LDE():
         return size
 
     def callF_(self, datas):
-        if self.cpu_base == 64:
+        if self.cpu_base != 64:
             if self.operand_size == 32:
                 size = 7
             else:
                 size = 5
         else:
-            size = 1
+            size = 7
         return size
 
     def jmp_far(self, datas):
-        if self.cpu_base == 64:
+        if self.cpu_base != 64:
             if self.operand_size == 32:
                 size = 7
             else:
@@ -288,11 +300,13 @@ class LDE():
         return size
 
     def prefREPNE(self, datas):
-        size = self.base_opcodes[datas[1]](datas[1:])
+        size = 1
+        size += self.base_opcodes[datas[1]](datas[1:])
         return size
 
     def prefREP(self, datas):
-        size = self.base_opcodes[datas[1]](datas[1:])
+        size = 1
+        size += self.base_opcodes[datas[1]](datas[1:])
         return size
 
     def d8_(self, datas):
@@ -348,16 +362,8 @@ class LDE():
         return size
 
     def prefAdSize(self, datas):
-        if self.operand_size == 32 or self.operand_size == 64:
-            self.operand_size = self.operand_size >> 1
-        else:
-            return 1
         size = 1
         size += self.base_opcodes[datas[1]](datas[1:])
-        if self.operand_size == 32 or self.operand_size == 16:
-            self.operand_size = self.operand_size << 1
-        else:
-            return 1
         return size
 
     def push_Iv(self, datas):
@@ -433,7 +439,7 @@ class LDE():
         return size
 
     def g6_(self, datas):
-        size = self.mod_rm(datas)
+        size = self.mod_rm(datas[1:])
         reg_mask = (datas[0] & 0b00111000) >> 3
         if reg_mask <= 5:
             size += 2
@@ -482,11 +488,13 @@ class LDE():
         return size
 
     def esc_tableA4(self, datas):
-        size = self.base_opcodes_3[datas[1]](datas[1:])
+        size = 1
+        size += self.base_opcodes_3[datas[1]](datas[1:])
         return size
 
     def esc_tableA5(self, datas):
-        size = self.base_opcodes_4[datas[1]](datas[1:])
+        size = 1
+        size += self.base_opcodes_4[datas[1]](datas[1:])
         return size
 
     def echec_(self, datas):
@@ -494,16 +502,20 @@ class LDE():
         return size
 
     def g5_IncDec(self, datas):
-        size = self.mod_rm(datas[1:])
+        size = 0
+        size += self.mod_rm(datas[1:])
         size += 2
         return size
 
     def addr_SIB(self, datas):
+        if self.cpu_base < 32:
+            return 0
         opcode = datas[0]
         size = 1
         base_mask = opcode & 0b00000111
         if base_mask == 5:
-            size += 4
+            if self.operand_size == 64:
+                size += 4
         return size
 
     def mod_rm(self, datas):
@@ -529,7 +541,7 @@ class LDE():
         return 0
 
     def decode_instr(self, datas_to_decode, extended_decode=False):
-        if not datas_to_decode or len(datas_to_decode) <= 0:
+        if not datas_to_decode:
             return [None, None]
         opcode = datas_to_decode[0]
         func = self.base_opcodes[opcode]
@@ -538,7 +550,7 @@ class LDE():
         if not extended_decode:
             clayer = op_instr
             i = 0
-            while datas_to_decode[i] in clayer:
+            while i < len(datas_to_decode) and datas_to_decode[i] in clayer:
                 clayer = clayer[datas_to_decode[i]]
                 if 'i' in clayer:
                     name = clayer['i']
@@ -549,7 +561,7 @@ class LDE():
             else:
                 clayer = op_instr_ext_64
             i = 0
-            while datas_to_decode[i] in clayer:
+            while i < len(datas_to_decode) and datas_to_decode[i] in clayer:
                 clayer = clayer[datas_to_decode[i]]
                 if 'i' in clayer:
                     name = clayer['i']
@@ -571,7 +583,7 @@ class LDE():
             if caddress is None:
                 continue
             datas = cb_read(caddress, 0x10)
-            if datas is None or len(datas) < 1 or datas.startswith(b"\x00\x00\x00\x00"):
+            if datas is None or len(datas) < 1 or datas[:4] == b"\x00\x00\x00\x00":
                 continue
             try:
                 instr_size, instr_name = self.decode_instr(datas, extended_decode)
@@ -585,6 +597,7 @@ class LDE():
             instr_list[caddress] = [instr_size]
             if instr_name is not None:
                 instr_list[caddress].append(instr_name)
+                len_datas = len(datas)
                 if instr_name == 'jcc_short':
                     to_disas.append(caddress+instr_size)
                     rel_jmp = datas[1]
@@ -593,8 +606,9 @@ class LDE():
                     to_disas.append(caddress+instr_size+rel_jmp)
                     instr_list[caddress].append(caddress+instr_size+rel_jmp)
                 elif instr_name == 'jcc_long':
-                    to_disas.append(caddress+instr_size+struct.unpack('i', datas[2:6])[0])
-                    instr_list[caddress].append(caddress+instr_size+struct.unpack('i', datas[2:6])[0])
+                    if len_datas >= 6:
+                        to_disas.append(caddress+instr_size+struct.unpack('i', datas[2:6])[0])
+                        instr_list[caddress].append(caddress+instr_size+struct.unpack('i', datas[2:6])[0])
                 elif instr_name == 'jmp_short':
                     rel_jmp = datas[1]
                     if (rel_jmp & 0x80) != 0:
@@ -603,45 +617,58 @@ class LDE():
                     instr_list[caddress].append(caddress+instr_size+rel_jmp)
                     stop_exec = True
                 elif instr_name == 'jmp_long':
-                    to_disas.append(caddress+instr_size+struct.unpack('i', datas[1:5])[0])
-                    instr_list[caddress].append(caddress+instr_size+struct.unpack('i', datas[1:5])[0])
+                    if len_datas >= 5:
+                        to_disas.append(caddress+instr_size+struct.unpack('i', datas[1:5])[0])
+                        instr_list[caddress].append(caddress+instr_size+struct.unpack('i', datas[1:5])[0])
                     stop_exec = True
                 elif instr_name == 'call':
-                    instr_list[caddress].append(caddress+instr_size+struct.unpack('i', datas[1:5])[0])
+                    if len_datas >= 5:
+                        instr_list[caddress].append(caddress+instr_size+struct.unpack('i', datas[1:5])[0])
                 elif instr_name.startswith('call_ptr'):
-                    ptr = caddress+instr_size+struct.unpack('i', datas[instr_size-4:instr_size])[0]
-                    if self.cpu_base == 64:
-                        ptr_datas = cb_read(ptr, 8)
+                    if len_datas >= 6:
+                        ptr = caddress+instr_size+struct.unpack('i', datas[instr_size-4:instr_size])[0]
+                        if self.cpu_base == 64:
+                            ptr_datas = cb_read(ptr, 8)
+                        else:
+                            ptr_datas = datas[2:6]
                     else:
-                        ptr_datas = datas[2:6]
+                        ptr_datas = None
+                        ptr = None
+                        stop_exec = True
                     if ptr_datas is not None:
                         if self.cpu_base == 64:
-                            ptr = struct.unpack('Q', ptr_datas)[0]
                             instr_list[caddress].append(ptr)
-                            ptr_datas = cb_read(ptr, 8)
-                            if ptr_datas and len(ptr_datas) == 8:
+                            if len(ptr_datas) >= 8:
                                 ptr = struct.unpack('Q', ptr_datas)[0]
+                                ptr_datas = cb_read(ptr, 8)
+                                if ptr_datas and len(ptr_datas) == 8:
+                                    ptr = struct.unpack('Q', ptr_datas)[0]
+                                else:
+                                    ptr = None
                             else:
                                 ptr = None
                         else:
                             ptr = struct.unpack('I', ptr_datas)[0]
                             instr_list[caddress].append(ptr)
-                    else:
+                    elif ptr:
                         instr_list[caddress].append(ptr)
                         ptr = None
-                    instr_list[caddress].append(ptr)
-                elif instr_name.startswith('jmp_ptr'):
-                    if self.cpu_base == 64:
-                        ptr = caddress+instr_size+struct.unpack('i', datas[instr_size-4:instr_size])[0]
-                        ptr_datas = cb_read(caddress+instr_size+ptr, 8)
-                    else:
-                        ptr_datas = datas[2:6]
-                    if ptr_datas is not None:
-                        if self.cpu_base == 64:
-                            ptr = struct.unpack('Q', ptr_datas)[0]
-                        else:
-                            ptr = struct.unpack('I', ptr_datas)[0]
+                    if ptr:
                         instr_list[caddress].append(ptr)
+                elif instr_name.startswith('jmp_ptr'):
+                    if len_datas >= 6:
+                        if self.cpu_base == 64:
+                            ptr = caddress+instr_size+struct.unpack('i', datas[instr_size-4:instr_size])[0]
+                            ptr_datas = cb_read(caddress+instr_size+ptr, 8)
+                        else:
+                            ptr_datas = datas[2:6]
+                        if ptr_datas:
+                            if self.cpu_base == 64 and len(ptr_datas) == 8:
+                                ptr = struct.unpack('Q', ptr_datas)[0]
+                                instr_list[caddress].append(ptr)
+                            elif self.cpu_base == 32 and len(ptr_datas) == 4:
+                                ptr = struct.unpack('I', ptr_datas)[0]
+                                instr_list[caddress].append(ptr)
                     stop_exec = True
                 elif instr_name.startswith('jmp_preg'):
                     stop_exec = True
@@ -649,17 +676,22 @@ class LDE():
                     stop_exec = True
                 elif instr_name.startswith('push_imm32'):
                     if self.cpu_base == 32:
-                        if len(datas) > 4:
+                        if len_datas > 4:
                             instr_list[caddress].append(struct.unpack("I", datas[instr_size-4:instr_size])[0])
-                elif instr_name.startswith('mov_imm32') or instr_name.startswith('add_imm32'):
-                    if self.cpu_base == 32:
-                        if len(datas) > 4:
+                elif instr_name.startswith('mov_imm32'):
+                    if len_datas > 4:
+                        instr_list[caddress].append(struct.unpack("I", datas[instr_size-4:instr_size])[0])
+                elif instr_name.startswith('mov_imm64'):
+                    if len_datas > 8:
+                        instr_list[caddress].append(struct.unpack("Q", datas[instr_size-8:instr_size])[0])
+                elif instr_name in ('add_imm32', 'mov_reg_imm32'):
+                    if len_datas >= instr_size:
+                        if len_datas > 4:
                             instr_list[caddress].append(struct.unpack("I", datas[instr_size-4:instr_size])[0])
-                    if self.cpu_base == 64:
-                        if len(datas) > 4:
-                            instr_list[caddress].append((caddress & 0xffffffff00000000)+struct.unpack("I", datas[instr_size-4:instr_size])[0])
-                elif instr_name.startswith('lea_rip_plus'):
-                    if len(datas) > 4:
+                    else:
+                        stop_exec = True
+                elif instr_name.startswith('lea_rip_plus') or instr_name.startswith('mov_rip_plus'):
+                    if len_datas > 4:
                         instr_list[caddress].append(caddress+instr_size+struct.unpack("i", datas[instr_size-4:instr_size])[0])
                 elif instr_name == 'add_rsp':
                     if datas[1] == 0x81:
@@ -668,9 +700,12 @@ class LDE():
                         instr_list[caddress].append(datas[3])
                 elif instr_name == 'int3':
                     stop_exec = True
+                elif instr_name == 'hlt':
+                    stop_exec = True
                 elif instr_name == 'ret':
                     if datas[0] == 0xc2:
-                        instr_list[caddress].append(struct.unpack("H", datas[1:3])[0])
+                        if len(datas) >= 3:
+                            instr_list[caddress].append(struct.unpack("H", datas[1:3])[0])
                     else:
                         instr_list[caddress].append(0)
                     stop_exec = True

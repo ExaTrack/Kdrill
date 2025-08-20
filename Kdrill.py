@@ -16,8 +16,10 @@ import socket
 import ms_infos
 
 
-if 'ctypes' in dir(ctypes):
+try:
     ctypes.windll.kernel32.Wow64DisableWow64FsRedirection(ctypes.byref(ctypes.c_long()))
+except Exception:
+    pass
 
 
 bitness = 64
@@ -3059,7 +3061,7 @@ def dump_module(address, module_name=None, max_size=300000):
 
 
 def is_PE_Entry(memory_dump):
-    if memory_dump[:2] == b"MZ" or b"This program " in memory_dump:
+    if memory_dump[:2] == b"MZ" or b"This program " in memory_dump or b".text\x00\x00\x00" in memory_dump or b"\x64\x86" in memory_dump[:0x400]:
         return True
     return False
 
@@ -3079,6 +3081,8 @@ def isFile(filename):
     filename = get_driver_name(filename)
     if type(filename) is bytearray:
         filename = bytes(filename).decode()
+    elif type(filename) is bytes:
+        filename = filename.decode()
     return os.path.isfile(filename)
 
 
@@ -5648,40 +5652,46 @@ def check_PE_in_kernel(check_file=True):
         if len(prev_pages) > 5000:
             prev_pages = prev_pages[-4:]
         prev_pages.append([page_address, page_infos])
+        if not page_infos['right']['present']:
+            prev_pages = []
+            continue
         if not page_infos['right']['exec']:
             continue
-        if len(prev_pages) > 2:
-            if prev_pages[-3][0] == (page_address-0x2000):
-                continue
+        if len(prev_pages) > 1:
             if prev_pages[-2][0] != (page_address-0x1000):
                 continue
-            if prev_pages[-2][1]['right']['exec']:
+            if not (page_infos['right']['exec'] and page_infos['right']['present']):
                 continue
+            if len(prev_pages) > 2:
+                if prev_pages[-3][0] == (page_address-0x2000):
+                    continue
         page = page_address-0x1000
         if bitness == 64:
             page = (page | 0xffff000000000000)
         if page > min_addr and page < max_addr:
             mem_dmp = get_va_memory(page, 0x1000)
-            if mem_dmp is not None and is_PE_Entry(mem_dmp):
-                if page in driver_list:
-                    if check_file:
-                        if isFile(driver_list[page]['Name']):
+            mem_dmp_cur = get_va_memory(page+0x1000, 0x1000)
+            if mem_dmp is not None and len(mem_dmp) == 0x1000 and mem_dmp_cur is not None and len(mem_dmp_cur) == 0x1000:
+                if is_PE_Entry(mem_dmp):
+                    if page in driver_list:
+                        if check_file:
+                            if isFile(driver_list[page]['Name']):
+                                print("  [OK] %x : %s" % (page, driver_list[page]['Name'].decode()))
+                            else:
+                                print("  [OK] %x : %s (not on FS)" % (page, driver_list[page]['Name'].decode()))
+                        else:
                             print("  [OK] %x : %s" % (page, driver_list[page]['Name'].decode()))
-                        else:
-                            print("  [OK] %x : %s (not on FS)" % (page, driver_list[page]['Name'].decode()))
                     else:
-                        print("  [OK] %x : %s" % (page, driver_list[page]['Name'].decode()))
-                else:
-                    if b".text\x00\x00\x00" in mem_dmp:
-                        if mem_dmp[:2] != b"MZ":
-                            print("  [NO] %x (Header overwritten)" % (page))
+                        if b".text\x00\x00\x00" in mem_dmp:
+                            if mem_dmp[:2] != b"MZ":
+                                print("  [NO] %x (Header overwritten) *** SUSPICIOUS ***" % (page))
+                            else:
+                                print("  [NO] %x  *** SUSPICIOUS ***" % (page))
+                            dump_module(page)
+                        elif b".rsrc\x00\x00\x00" in mem_dmp:
+                            print("  [NO] %x (no .text, but .rsrc)" % (page))
                         else:
-                            print("  [NO] %x" % (page))
-                        dump_module(page)
-                    elif b".rsrc\x00\x00\x00" in mem_dmp:
-                        print("  [NO] %x (no .text, but .rsrc)" % (page))
-                    else:
-                        print("  [NO] %x (no .text and .rsrc)" % (page))
+                            print("  [NO] %x (no .text and .rsrc)" % (page))
         elif page in driver_list:
             print("  [??] %x %s" % (page, driver_list[page]['Name']))
             mem_dmp = get_va_memory(page, 0x1000)
@@ -6511,6 +6521,7 @@ def check_CI_checks_cb():
                 break
             if debug > 0:
                 print('  SeValidateImageData callback : 0x%x' % (seValidateImageData_callback_ptr))
+                print('  SeValidateImageHeader callback : 0x%x' % (seValidateImageHeader_callback_ptr))
             break
         if seValidateImageData_callback_ptr is not None:
             break
@@ -6525,11 +6536,12 @@ def check_CI_checks_cb():
             cb_SeValidateImageData = get_va_memory(seValidateImageData_callback_ptr, 2)
             if cpu == "aarch64" and cb_SeValidateImageData == b"\x7f\x23":
                 print("[*] SeValidateImageData OK")
+                seValidateImageData_callback = seValidateImageData_callback_ptr
             elif cb_SeValidateImageData == b"\x48\x89":
                 print("[*] SeValidateImageData OK")
+                seValidateImageData_callback = seValidateImageData_callback_ptr
             else:
                 print("[!] Callback SeValidateImageData is patched at 0x%x ***** SUSPICIOUS *****" % (seValidateImageData_callback_ptr))
-                seValidateImageData_callback = seValidateImageData_callback_ptr
             if 'CiValidateImageHeader' in ci_functions and ci_functions['CiValidateImageHeader'] == seValidateImageHeader_callback_ptr:
                 print("[*] SeValidateImageHeader OK")
                 seValidateImageHeader_callback = seValidateImageHeader_callback_ptr
@@ -7594,7 +7606,7 @@ while True:
         gdb_connect()
     try:
         commands = ";"+commands+";"
-        commands = commands.replace(';all;', ';print Check : cidt;cidt;print Check : cirp;cirp;print Check : cdev;cdev;print Check : ccb;ccb;print Check : cktypes;cktypes;print Check : cio;cio;print Check : cndis;cndis;print Check : cnetio;cnetio;print Check : cfltmgr;cfltmgr;print Check : creg;creg;print Check : ctimer;ctimer;print Check : fpg;fpg;print Check : ci;ci;print Check : cci;cci;print Check : pe;pe;')
+        commands = commands.replace(';all;', ';print Check : cidt;cidt;print Check : cirp;cirp;print Check : cdev;cdev;print Check : ccb;ccb;print Check : cktypes;cktypes;print Check : cio;cio;print Check : cndis;cndis;print Check : cnetio;cnetio;print Check : cfltmgr;cfltmgr;print Check : creg;creg;print Check : ctimer;ctimer;print Check : ci;ci;print Check : cci;cci;print Check : pe;pe;')
         commands = commands.split(";")
         while '' in commands:
             commands.remove('')
@@ -7644,7 +7656,7 @@ while True:
                         cpage_datas = get_va_memory(addr+(cpage << 12), 0x1000)
                         if cpage_datas is None:
                             print("page %x not mapped, replaced by \\x00" % (addr+(cpage << 12)))
-                            cpage_datas = "\x00"*0x1000
+                            cpage_datas = b"\x00"*0x1000
                         list_pages_datas.append(cpage_datas)
                     datas = b''.join(list_pages_datas)[:length]
                     if datas is None:
@@ -7663,6 +7675,9 @@ while True:
                     offset = 0
                     while offset < size:
                         addr = get_qword_from_va(base_addr+offset)
+                        if not addr:
+                            offset += 8
+                            continue
                         drv = get_driver_name_from_address(addr)
                         comment = []
                         if drv is not None:
@@ -7953,8 +7968,9 @@ while True:
             elif args[0] == "drv_stack":
                 if len(args) > 1:
                     devs = get_obj_list("\\")
-                    if args[1] in rootDirectoryObject_list:
-                        dev_obj = rootDirectoryObject_list[args[1]]
+                    check_drv = bytes(bytearray(args[1], 'ascii'))
+                    if check_drv in rootDirectoryObject_list:
+                        dev_obj = rootDirectoryObject_list[check_drv]
                         drv_obj = decode_driver_object(dev_obj['Object'])
                         dev_addr = drv_obj['DeviceObject']
                         dev_obj = decode_device_object(dev_addr)
@@ -7962,11 +7978,11 @@ while True:
                             dev_name = get_device_name_from_address(dev_addr)
                             print("")
                             if dev_name is not None:
-                                print("- Stack of device name : %s" % (dev_name))
+                                print("- Stack of device name : %s" % (dev_name.decode()))
                             else:
                                 obj_infos = get_object_infos(dev_addr)
                                 if 'Name' in obj_infos:
-                                    print("- Stack of device at : %x ('%s')" % (dev_addr, obj_infos['Name']))
+                                    print("- Stack of device at : %x ('%s')" % (dev_addr, obj_infos['Name'].decode()))
                                 else:
                                     print("- Stack of device at : %x" % (dev_addr))
                             crawl_device_object(dev_addr)
@@ -8167,7 +8183,7 @@ while True:
                     if dev_root[0] != '\\' and not (bytes(bytearray(dev_root, 'utf8')) in dev_obj):
                         continue
                     if devs[dev_obj]['TypeIndex'] == 3:
-                        print("   <DIR>         %s" % (dev_obj))
+                        print("   <DIR>         %s" % (dev_obj.decode()))
                     elif devs[dev_obj]['TypeIndex'] in obj_header_types:
                         typestr = obj_header_types[devs[dev_obj]['TypeIndex']]
                         print(" %s%s %s  (%x)" % (typestr, ' '*(15-len(typestr)), dev_obj.decode(), devs[dev_obj]['Object']))
@@ -8176,10 +8192,10 @@ while True:
                             if sym is not None:
                                 sym = sym.replace(b"\x00", b'')
                             else:
-                                sym = ""
-                            print("                   +-> %s" % (sym))
+                                sym = b""
+                            print("                   +-> %s" % (sym.decode()))
                     else:
-                        print("                 %s  (%x)" % (dev_obj, devs[dev_obj]['Object']))
+                        print("                 %s  (%x)" % (dev_obj.decode(), devs[dev_obj]['Object']))
             elif args[0] == "o2p":
                 addr = int(args[1], 16)
                 print("Physical address : 0x%X" % (get_phys_from_file_offset(addr)+(addr & 0xfff)))
